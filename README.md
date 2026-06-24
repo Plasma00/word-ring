@@ -1,6 +1,6 @@
 # 词云环 (Word Ring)
 
-> 从微信聊天记录提取高频词/梗/谐音词 → 无限水平滚动词云环可视化
+> 从和亲友的微信聊天记录中提取高频词/梗/谐音词，在无限水平滚动的词云环上可视化。
 
 ```
 聊天.md → extract_words_v3.py → candidate_words.json → visual_filter.html（人工筛选）
@@ -114,7 +114,7 @@ fontSize = 14 + ratio^0.55 × 58     (power-curve, 14~72px)
 
 ## 数据来源
 
-微信聊天记录由 [weflow]([https://github.com/welive-app/welive](https://github.com/hicccc77/WeFlow))  导出为 Markdown。。
+微信聊天记录由 [weflow](https://github.com/hicccc77/WeFlow) 导出为 Markdown。
 
 
 ## 更新词库
