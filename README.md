@@ -114,7 +114,7 @@ fontSize = 14 + ratio^0.55 × 58     (power-curve, 14~72px)
 
 ## 数据来源
 
-微信聊天记录由 [weflow]([https://github.com/welive-app/welive](https://github.com/hicccc77/WeFlow)) 导出为 Markdown。。
+微信聊天记录由 [weflow]([https://github.com/welive-app/welive](https://github.com/hicccc77/WeFlow))  导出为 Markdown。。
 
 
 ## 更新词库
