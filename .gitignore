@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# User private data (chat logs, WeChat exports, extracted words)
+temp/
+output_v3/
+
+# Claude internal files
+.claude/
+
+# Original downloaded project (reference only, not part of this repo)
+original_project/
+
+# OS files
+.DS_Store
+Thumbs.db

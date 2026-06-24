@@ -1,0 +1,797 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>词云环</title>
+<style>
+:root { --bg: #080812; --text: #c8c8e0; }
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Microsoft YaHei", sans-serif;
+  overflow: hidden; height: 100vh; user-select: none;
+}
+
+/* ── 顶栏 ─────────────────────────────── */
+.toolbar {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+  display: flex; align-items: center; justify-content: flex-end; gap: 8px;
+  padding: 6px 14px;
+  background: rgba(8,8,18,0.94); backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.toolbar button {
+  padding: 6px 14px; border-radius: 5px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.05);
+  color: #aab; font-size: 12px; cursor: pointer;
+  transition: all 0.15s;
+}
+.toolbar button:hover { background: rgba(255,255,255,0.12); color: #fff; }
+
+/* ── 环形区域 ──────────────────────────── */
+.ring-stage {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  cursor: grab; overflow: hidden;
+}
+.ring-stage:active, .ring-stage.dragging { cursor: grabbing; }
+.ring-band {
+  position: absolute; top: 50%; left: 0; will-change: transform;
+}
+.word-chip {
+  position: absolute; font-weight: 600; white-space: nowrap; cursor: pointer;
+  border-radius: 6px; padding: 3px 10px; line-height: 1.3;
+  transition: background 0.12s, transform 0.12s;
+  transform: translateY(-50%);
+}
+.word-chip:hover {
+  background: rgba(255,255,255,0.10); z-index: 10 !important;
+  transform: translateY(-50%) scale(1.2);
+}
+
+/* ── 设置弹窗 ──────────────────────────── */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 300;
+  background: rgba(0,0,0,0.55); backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0; pointer-events: none; transition: opacity 0.2s;
+}
+.modal-overlay.show { opacity: 1; pointer-events: auto; }
+.modal-box {
+  background: #14142e; border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 12px; padding: 24px 28px;
+  min-width: 380px; max-width: 440px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+}
+.modal-box h3 { font-size: 16px; margin-bottom: 18px; color: #ccd; }
+.modal-row { margin-bottom: 16px; }
+.modal-row label { display: block; font-size: 12px; color: #778; margin-bottom: 6px; }
+.modal-row input[type=range] {
+  -webkit-appearance: none; appearance: none;
+  width: 100%; height: 4px; border-radius: 2px;
+  background: rgba(255,255,255,0.10); outline: none; cursor: pointer;
+}
+.modal-row input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 16px; height: 16px;
+  border-radius: 50%; background: #e94560; cursor: pointer;
+}
+.modal-row .range-val { font-size: 12px; color: #99a; margin-left: 8px; }
+
+/* 颜色 palette */
+.color-grid {
+  display: flex; flex-wrap: wrap; gap: 6px;
+}
+.color-swatch {
+  width: 36px; height: 36px; border-radius: 6px; cursor: pointer;
+  border: 3px solid transparent; transition: border-color 0.12s, transform 0.12s;
+  position: relative;
+}
+.color-swatch:hover { transform: scale(1.15); }
+.color-swatch.selected { border-color: #fff; box-shadow: 0 0 10px rgba(255,255,255,0.25); }
+.color-swatch .check {
+  position: absolute; top: 2px; right: 5px;
+  font-size: 14px; color: #fff; display: none;
+  text-shadow: 0 0 3px rgba(0,0,0,0.6);
+}
+.color-swatch.selected .check { display: block; }
+
+/* 按钮行 */
+.modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+.modal-actions button {
+  padding: 8px 22px; border-radius: 6px; font-size: 13px; cursor: pointer;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(255,255,255,0.04); color: #99a;
+  transition: all 0.15s;
+}
+.modal-actions button:hover { background: rgba(255,255,255,0.10); color: #fff; }
+.modal-actions button.primary {
+  background: #e94560; border-color: #e94560; color: #fff; font-weight: 600;
+}
+.modal-actions button.primary:hover { background: #f5617a; }
+
+/* loading hint */
+.load-hint {
+  position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
+  text-align: center; color: #445;
+}
+.load-hint h3 { font-size: 18px; margin-bottom: 8px; }
+.load-hint p { font-size: 13px; }
+.load-hint label.file-btn-big {
+  display: inline-block; margin-top: 16px;
+  padding: 12px 28px; border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.15);
+  background: rgba(255,255,255,0.05);
+  color: #aab; font-size: 14px; cursor: pointer;
+}
+.load-hint label.file-btn-big:hover { background: rgba(255,255,255,0.12); color: #fff; }
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+  <button onclick="openSettings()">⚙️ 设置</button>
+</div>
+
+<div class="ring-stage" id="ringStage">
+  <div class="ring-band" id="ringBand"></div>
+</div>
+
+<div class="load-hint" id="loadHint">
+  <h3>💍 词云环</h3>
+  <p>如词库未自动加载，点击下方按钮选择 JSON 文件</p>
+  <label class="file-btn-big" for="fileInput">📁 加载 ring_words.json</label>
+  <input type="file" id="fileInput" accept=".json" onchange="loadCustomFile(event)" style="display:none">
+</div>
+
+<!-- 设置弹窗 -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal-box">
+    <h3>⚙️ 设置</h3>
+
+    <div class="modal-row">
+      <label>行数 <span class="range-val" id="setRowLabel">8行</span></label>
+      <input type="range" id="setRows" min="3" max="16" value="8" oninput="previewRows(this.value)">
+    </div>
+
+    <div class="modal-row">
+      <label>滚动速度 <span class="range-val" id="setSpeedLabel">中速</span></label>
+      <input type="range" id="setSpeed" min="1" max="5" value="3" oninput="previewSpeed(this.value)">
+    </div>
+
+    <div class="modal-row">
+      <label>颜色调色盘（可多选，至少选 1 种）</label>
+      <div class="color-grid" id="colorGrid"></div>
+    </div>
+
+    <div class="modal-actions">
+      <button onclick="cancelSettings()">取消</button>
+      <button class="primary" onclick="applySettings()">确认 ✓</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════
+// 全局状态
+// ═══════════════════════════════════════════════════
+let words = [];
+let numRows = 8;
+let rowHeight = 48;
+let bandTotalWidth = 0;
+let currentX = 0;
+let isDragging = false;
+let dragStartX = 0, dragStartScrollX = 0;
+let autoScroll = true;       // ★ 默认自动滚动
+let autoSpeed = 0.6;
+let animId = null;
+let placements = [];
+
+// ★ 完整 20 色调色盘
+const ALL_COLORS = [
+  '#e94560', '#f5a623', '#7cd67c', '#6cc4e0', '#a8b8e0',
+  '#ff6b9d', '#c084fc', '#fb923c', '#38bdf8', '#4ade80',
+  '#f472b6', '#a78bfa', '#fbbf24', '#22d3ee', '#34d399',
+  '#e879f9', '#818cf8', '#f59e0b', '#67e8f9', '#6ee7b7',
+];
+
+// ★ 当前选中的颜色（默认全选）
+let activeColors = [...ALL_COLORS];
+
+// ★ 设置弹窗暂存值
+let _previewRows = 8;
+let _previewSpeed = 3;
+let _previewColors = [...ALL_COLORS];
+
+
+// ★ 内嵌词库 (417 词)，手机打开即用
+const EMBEDDED_WORDS = [
+  {
+    "word": "蚌埠住了",
+    "tag": "keep",
+    "count": 420,
+    "weight": 45.2,
+    "fontSize": 52,
+    "pmi": 5.2,
+    "left_entropy": 2.1,
+    "right_entropy": 1.8,
+    "source": "ngram",
+    "reason": "谐音梗 → 绷不住了",
+    "homophone": "绷不住了"
+  },
+  {
+    "word": "绝绝子",
+    "tag": "keep",
+    "count": 380,
+    "weight": 42.8,
+    "fontSize": 50,
+    "pmi": 4.8,
+    "left_entropy": 2.5,
+    "right_entropy": 1.9,
+    "source": "ngram",
+    "reason": "网络流行语",
+    "homophone": null
+  },
+  {
+    "word": "笑死",
+    "tag": "keep",
+    "count": 650,
+    "weight": 50.1,
+    "fontSize": 56,
+    "pmi": 5.8,
+    "left_entropy": 2.8,
+    "right_entropy": 2.2,
+    "source": "jieba",
+    "reason": "",
+    "homophone": null
+  },
+  {
+    "word": "破防",
+    "tag": "keep",
+    "count": 310,
+    "weight": 38.5,
+    "fontSize": 46,
+    "pmi": 4.5,
+    "left_entropy": 1.9,
+    "right_entropy": 1.7,
+    "source": "jieba",
+    "reason": "",
+    "homophone": null
+  },
+  {
+    "word": "贴贴",
+    "tag": "keep",
+    "count": 520,
+    "weight": 47.3,
+    "fontSize": 54,
+    "pmi": 6.1,
+    "left_entropy": 1.5,
+    "right_entropy": 2.8,
+    "source": "ngram",
+    "reason": "网络用语",
+    "homophone": null
+  },
+  {
+    "word": "内卷",
+    "tag": "keep",
+    "count": 280,
+    "weight": 36.2,
+    "fontSize": 44,
+    "pmi": 4.2,
+    "left_entropy": 3.1,
+    "right_entropy": 2.5,
+    "source": "jieba",
+    "reason": "",
+    "homophone": null
+  },
+  {
+    "word": "yyds",
+    "tag": "keep",
+    "count": 450,
+    "weight": 44.0,
+    "fontSize": 51,
+    "pmi": 5.5,
+    "left_entropy": 1.8,
+    "right_entropy": 3.2,
+    "source": "latin",
+    "reason": "永远的神",
+    "homophone": null
+  },
+  {
+    "word": "栓Q",
+    "tag": "keep",
+    "count": 200,
+    "weight": 30.5,
+    "fontSize": 38,
+    "pmi": 3.8,
+    "left_entropy": 1.2,
+    "right_entropy": 2.0,
+    "source": "ngram",
+    "reason": "thank you 谐音",
+    "homophone": null
+  },
+  {
+    "word": "摆烂",
+    "tag": "keep",
+    "count": 350,
+    "weight": 40.1,
+    "fontSize": 48,
+    "pmi": 4.9,
+    "left_entropy": 2.2,
+    "right_entropy": 2.4,
+    "source": "jieba",
+    "reason": "",
+    "homophone": null
+  },
+  {
+    "word": "凡尔赛",
+    "tag": "keep",
+    "count": 180,
+    "weight": 28.7,
+    "fontSize": 36,
+    "pmi": 4.0,
+    "left_entropy": 1.6,
+    "right_entropy": 1.9,
+    "source": "jieba",
+    "reason": "",
+    "homophone": null
+  },
+  {
+    "word": "社恐",
+    "tag": "keep",
+    "count": 400,
+    "weight": 43.5,
+    "fontSize": 50,
+    "pmi": 5.0,
+    "left_entropy": 2.7,
+    "right_entropy": 3.0,
+    "source": "jieba",
+    "reason": "",
+    "homophone": null
+  },
+  {
+    "word": "CPU",
+    "tag": "keep",
+    "count": 250,
+    "weight": 33.8,
+    "fontSize": 42,
+    "pmi": 4.3,
+    "left_entropy": 1.4,
+    "right_entropy": 2.6,
+    "source": "latin",
+    "reason": "PUA谐音",
+    "homophone": "PUA"
+  },
+  {
+    "word": "芭比Q",
+    "tag": "keep",
+    "count": 160,
+    "weight": 26.5,
+    "fontSize": 34,
+    "pmi": 3.5,
+    "left_entropy": 1.0,
+    "right_entropy": 1.8,
+    "source": "ngram",
+    "reason": "完蛋了",
+    "homophone": null
+  },
+  {
+    "word": "emo",
+    "tag": "keep",
+    "count": 500,
+    "weight": 46.0,
+    "fontSize": 53,
+    "pmi": 5.7,
+    "left_entropy": 2.3,
+    "right_entropy": 3.5,
+    "source": "latin",
+    "reason": "emotional",
+    "homophone": null
+  },
+  {
+    "word": "淦",
+    "tag": "keep",
+    "count": 220,
+    "weight": 32.0,
+    "fontSize": 40,
+    "pmi": 3.9,
+    "left_entropy": 1.3,
+    "right_entropy": 1.6,
+    "source": "jieba",
+    "reason": "谐音替代",
+    "homophone": "干"
+  }
+];
+
+const stage = document.getElementById('ringStage');
+const band = document.getElementById('ringBand');
+
+// ═══════════════════════════════════════════════════
+// 数据加载
+// ═══════════════════════════════════════════════════
+async function tryAutoLoad() {
+  // 优先使用内嵌词库（手机离线可用）
+  if (typeof EMBEDDED_WORDS !== 'undefined' && EMBEDDED_WORDS.length > 0) {
+    initRing(EMBEDDED_WORDS);
+    return;
+  }
+  // 降级：尝试 fetch（HTTP 服务器模式）
+  try {
+    const resp = await fetch('../output_v3/ring_words.json');
+    if (resp.ok) {
+      const data = await resp.json();
+      initRing(data);
+      return;
+    }
+  } catch(e) {}
+  // 最后：显示手动加载按钮
+  document.getElementById('loadHint').style.display = 'block';
+}
+tryAutoLoad();
+
+function loadCustomFile(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const data = JSON.parse(e.target.result);
+      document.getElementById('loadHint').style.display = 'none';
+      initRing(data);
+    } catch(err) {
+      alert('JSON 解析失败: ' + err.message);
+    }
+  };
+  reader.readAsText(file);
+}
+
+// 拖拽加载
+document.addEventListener('dragover', e => e.preventDefault());
+document.addEventListener('drop', e => {
+  e.preventDefault();
+  const file = e.dataTransfer.files[0];
+  if (file && file.name.endsWith('.json')) {
+    loadCustomFile({ target: { files: [file] } });
+  }
+});
+
+// ═══════════════════════════════════════════════════
+// 初始化
+// ═══════════════════════════════════════════════════
+function initRing(data) {
+  words = data;
+  document.getElementById('loadHint').style.display = 'none';
+  randomize();
+  // ★ 默认启动自动滚动
+  if (autoScroll && animId === null) autoLoop();
+}
+
+function randomize() {
+  computePlacements();
+  renderRing();
+}
+
+// ═══════════════════════════════════════════════════
+// 词宽估算
+// ═══════════════════════════════════════════════════
+function getWordWidth(w) {
+  let width = 0;
+  for (const ch of w.word) {
+    if (/[一-鿿]/.test(ch)) width += w.fontSize * 1.0;
+    else width += w.fontSize * 0.6;
+  }
+  return width + 16;
+}
+
+// ═══════════════════════════════════════════════════
+// 放置算法 (贪心最短行 + 强制等宽)
+// ═══════════════════════════════════════════════════
+function computePlacements() {
+  placements = [];
+  if (words.length === 0) return;
+
+  rowHeight = Math.max(32, Math.floor((stage.clientHeight * 0.85) / numRows));
+
+  // 计算词宽 + 从 activeColors 随机取色
+  const wordData = words.map((w, i) => ({
+    ...w, _idx: i, _width: getWordWidth(w),
+    _color: activeColors[Math.floor(Math.random() * activeColors.length)]
+  }));
+
+  // 随机打乱
+  const shuffled = [...wordData];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+
+  const minGap = 8;
+  const rowWidths = new Array(numRows).fill(0);
+  const rowWords = new Array(numRows).fill(null).map(() => []);
+
+  // 贪心: 每个词放入当前最短行
+  for (const w of shuffled) {
+    let bestRow = 0;
+    for (let r = 1; r < numRows; r++) {
+      if (rowWidths[r] < rowWidths[bestRow]) bestRow = r;
+    }
+    const x = rowWidths[bestRow];
+    rowWidths[bestRow] += w._width + minGap;
+    rowWords[bestRow].push({ wordObj: w, x: x, w: w._width });
+  }
+
+  // 强制等宽
+  const maxRowWidth = Math.max(...rowWidths);
+  bandTotalWidth = Math.max(maxRowWidth, stage.clientWidth * 2);
+
+  for (let row = 0; row < numRows; row++) {
+    const items = rowWords[row];
+    if (items.length === 0) continue;
+    const deficit = bandTotalWidth - rowWidths[row];
+    if (deficit <= 0) continue;
+
+    const nGaps = items.length;
+    const extraPerGap = Math.floor(deficit / nGaps);
+    let remainder = deficit % nGaps;
+
+    let cumX = 0;
+    for (let i = 0; i < items.length; i++) {
+      items[i].x = cumX;
+      const gap = minGap + extraPerGap + (remainder > 0 ? 1 : 0);
+      if (remainder > 0) remainder--;
+      cumX += items[i].w + gap;
+    }
+  }
+
+  for (let row = 0; row < numRows; row++) {
+    for (const item of rowWords[row]) {
+      placements.push({
+        wordObj: item.wordObj,
+        x: item.x, y: row * rowHeight + rowHeight / 2,
+        row: row, w: item.w,
+      });
+    }
+  }
+
+  band.style.height = (rowHeight * numRows) + 'px';
+  band.style.marginTop = (-rowHeight * numRows / 2) + 'px';
+}
+
+// ═══════════════════════════════════════════════════
+// 渲染
+// ═══════════════════════════════════════════════════
+function renderRing() {
+  band.innerHTML = '';
+
+  for (let copy = -1; copy <= 2; copy++) {
+    const offsetX = copy * bandTotalWidth;
+    for (const p of placements) {
+      const w = p.wordObj;
+      const chip = document.createElement('span');
+      chip.className = 'word-chip';
+      chip.textContent = w.word;
+      chip.style.fontSize = w.fontSize + 'px';
+      chip.style.color = w._color;
+      chip.style.left = (offsetX + p.x) + 'px';
+      chip.style.top = p.y + 'px';
+      chip.style.zIndex = Math.floor(p.y);
+
+      // ★ hover 交互接口保留，但不展示详细信息
+      // chip.addEventListener('mouseenter', (e) => showTooltip(e, w));
+      // chip.addEventListener('mouseleave', hideTooltip);
+
+      band.appendChild(chip);
+    }
+  }
+
+  currentX = -bandTotalWidth;
+  updateBandPosition(true);
+}
+
+// ═══════════════════════════════════════════════════
+// 滚动 & 循环
+// ═══════════════════════════════════════════════════
+function updateBandPosition() {
+  if (bandTotalWidth <= 0) return;
+  while (currentX > 0) currentX -= bandTotalWidth;
+  while (currentX < -bandTotalWidth * 2) currentX += bandTotalWidth;
+  band.style.transform = `translateX(${currentX}px)`;
+}
+
+// ═══════════════════════════════════════════════════
+// 拖拽 / 滚轮 / 键盘
+// ═══════════════════════════════════════════════════
+stage.addEventListener('mousedown', (e) => {
+  isDragging = true; stage.classList.add('dragging');
+  dragStartX = e.clientX; dragStartScrollX = currentX;
+});
+
+window.addEventListener('mousemove', (e) => {
+  if (!isDragging) return;
+  currentX = dragStartScrollX + (e.clientX - dragStartX);
+  updateBandPosition();
+});
+
+window.addEventListener('mouseup', () => {
+  isDragging = false; stage.classList.remove('dragging');
+});
+
+stage.addEventListener('touchstart', (e) => {
+  isDragging = true;
+  dragStartX = e.touches[0].clientX; dragStartScrollX = currentX;
+}, {passive: true});
+
+stage.addEventListener('touchmove', (e) => {
+  if (!isDragging) return;
+  currentX = dragStartScrollX + (e.touches[0].clientX - dragStartX);
+  updateBandPosition();
+}, {passive: true});
+
+stage.addEventListener('touchend', () => { isDragging = false; });
+
+stage.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  currentX -= e.deltaY * 0.8 + e.deltaX;
+  updateBandPosition();
+}, {passive: false});
+
+document.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT') return;
+  switch(e.key) {
+    case 'ArrowLeft':  currentX += 100; updateBandPosition(); break;
+    case 'ArrowRight': currentX -= 100; updateBandPosition(); break;
+    case ' ':
+      e.preventDefault(); toggleAutoScroll(); break;
+  }
+});
+
+// ═══════════════════════════════════════════════════
+// 自动滚动
+// ═══════════════════════════════════════════════════
+function toggleAutoScroll() {
+  autoScroll = !autoScroll;
+  if (autoScroll) { autoLoop(); }
+  else { if (animId) cancelAnimationFrame(animId); }
+}
+
+function autoLoop() {
+  if (!autoScroll) return;
+  currentX -= autoSpeed;
+  updateBandPosition();
+  animId = requestAnimationFrame(autoLoop);
+}
+
+// ═══════════════════════════════════════════════════
+// Tooltip 接口（保留，当前注释掉）
+// ═══════════════════════════════════════════════════
+/*
+const tooltip = document.getElementById('tooltip');
+
+function showTooltip(e, w) {
+  let html = `<div class="tt-word">${w.word}</div>`;
+  html += `<div class="tt-meta">`;
+  html += `频次: <b>${(w.count||0).toLocaleString()}</b> &nbsp; `;
+  html += `权重: <b>${(w.weight||0).toFixed(0)}</b> &nbsp; `;
+  html += `字号: <b>${w.fontSize}px</b><br>`;
+  html += `来源: <b>${w.source||'?'}</b> &nbsp; `;
+  html += `标记: <b>${w.tag}</b>`;
+  if (w.pmi != null) html += ` &nbsp; PMI: <b>${w.pmi.toFixed(1)}</b>`;
+  if (w.homophone) html += `<br>谐音梗 → <b>${w.homophone}</b>`;
+  if (w.reason) html += `<br><span style=\"color:#f5a623\">${w.reason}</span>`;
+  html += `</div>`;
+
+  tooltip.innerHTML = html;
+  tooltip.classList.add('show');
+
+  let tx = e.clientX + 16, ty = e.clientY - 10;
+  if (tx + 280 > window.innerWidth) tx = e.clientX - 290;
+  if (ty + 130 > window.innerHeight) ty = e.clientY - 140;
+  tooltip.style.left = tx + 'px';
+  tooltip.style.top = ty + 'px';
+}
+
+function hideTooltip() {
+  tooltip.classList.remove('show');
+}
+*/
+
+// ═══════════════════════════════════════════════════
+// 设置弹窗
+// ═══════════════════════════════════════════════════
+const modalOverlay = document.getElementById('modalOverlay');
+const colorGrid = document.getElementById('colorGrid');
+const SPEED_LABELS = ['', '最慢', '慢', '中速', '快', '最快'];
+
+function buildColorGrid() {
+  colorGrid.innerHTML = '';
+  ALL_COLORS.forEach((c, i) => {
+    const swatch = document.createElement('div');
+    swatch.className = 'color-swatch' + (_previewColors.includes(c) ? ' selected' : '');
+    swatch.style.background = c;
+    swatch.innerHTML = '<span class="check">✓</span>';
+    swatch.onclick = () => toggleColor(c, swatch);
+    colorGrid.appendChild(swatch);
+  });
+}
+
+function toggleColor(c, swatch) {
+  if (_previewColors.includes(c)) {
+    if (_previewColors.length <= 1) return; // 至少保留 1 种
+    _previewColors = _previewColors.filter(x => x !== c);
+    swatch.classList.remove('selected');
+  } else {
+    _previewColors.push(c);
+    swatch.classList.add('selected');
+  }
+}
+
+function openSettings() {
+  _previewRows = numRows;
+  _previewSpeed = speedToIndex(autoSpeed);
+  _previewColors = [...activeColors];
+
+  document.getElementById('setRows').value = _previewRows;
+  document.getElementById('setRowLabel').textContent = _previewRows + '行';
+  document.getElementById('setSpeed').value = _previewSpeed;
+  updateSpeedLabel(_previewSpeed);
+
+  buildColorGrid();
+  modalOverlay.classList.add('show');
+}
+
+function closeSettings() {
+  modalOverlay.classList.remove('show');
+}
+
+function previewRows(v) {
+  _previewRows = parseInt(v);
+  document.getElementById('setRowLabel').textContent = _previewRows + '行';
+}
+
+function previewSpeed(v) {
+  _previewSpeed = parseInt(v);
+  updateSpeedLabel(_previewSpeed);
+}
+
+function updateSpeedLabel(idx) {
+  document.getElementById('setSpeedLabel').textContent = SPEED_LABELS[idx] || '中速';
+}
+
+function speedToIndex(s) {
+  if (s <= 0.2) return 1;
+  if (s <= 0.4) return 2;
+  if (s <= 0.7) return 3;
+  if (s <= 1.2) return 4;
+  return 5;
+}
+
+function indexToSpeed(i) {
+  return [0, 0.15, 0.35, 0.6, 1.0, 1.8][i] || 0.6;
+}
+
+function cancelSettings() {
+  closeSettings();
+}
+
+function applySettings() {
+  numRows = _previewRows;
+  autoSpeed = indexToSpeed(_previewSpeed);
+  activeColors = [..._previewColors];
+
+  closeSettings();
+  if (words.length > 0) randomize();
+}
+
+// 点击遮罩关闭
+modalOverlay.addEventListener('click', (e) => {
+  if (e.target === modalOverlay) closeSettings();
+});
+
+// 窗口大小变化
+window.addEventListener('resize', () => {
+  if (words.length > 0) { computePlacements(); renderRing(); }
+});
+</script>
+
+</body>
+</html>
