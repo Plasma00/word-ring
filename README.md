@@ -114,12 +114,8 @@ fontSize = 14 + ratio^0.55 × 58     (power-curve, 14~72px)
 
 ## 数据来源
 
-微信聊天记录由 [welive](https://github.com/welive-app/welive) 导出为 Markdown。welive 工具存放在 `original_project/`（gitignored，仅供参考）。
+微信聊天记录由 [weflow]([https://github.com/welive-app/welive](https://github.com/hicccc77/WeFlow) 导出为 Markdown。。
 
-```bash
-# welive 导出示例
-./welive export-session --session-id "wxid_xxx" --out ../temp/聊天.md --readable --parse-content
-```
 
 ## 更新词库
 
