@@ -3,9 +3,17 @@ __pycache__/
 *.pyc
 *.pyo
 
-# User private data (chat logs, WeChat exports, extracted words)
-temp/
-output_v3/
+# User data directory — only demo/example files are committed
+Files/*
+!Files/.gitkeep
+!Files/chat_history.md
+!Files/candidate_words.json
+!Files/candidate_words.txt
+!Files/ring_words.json
+!Files/all_jieba_words.txt
+
+# Runtime uploads (always ignored)
+Files/uploads/
 
 # Claude internal files
 .claude/

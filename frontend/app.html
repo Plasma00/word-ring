@@ -1,0 +1,1661 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>词云环 · 三阶段管道</title>
+<style>
+/* ═══════════════ 基础主题 ═══════════════ */
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+  background: #1a1a2e; color: #e0e0e0; min-height: 100vh;
+}
+button {
+  cursor: pointer; font-family: inherit; border: none; border-radius: 8px;
+  padding: 10px 20px; font-size: 15px; font-weight: 600; transition: all 0.2s;
+}
+button:active { transform: scale(0.96); }
+
+/* ═══════════════ 步骤指示器 ═══════════════ */
+.step-indicator {
+  display: flex; justify-content: center; align-items: center;
+  padding: 20px; gap: 0; background: #16213e; border-bottom: 2px solid #0f3460;
+}
+.step {
+  display: flex; align-items: center; gap: 8px; padding: 10px 20px;
+  border-radius: 24px; font-size: 14px; font-weight: 600;
+  transition: all 0.3s; opacity: 0.4; user-select: none;
+}
+.step.active { opacity: 1; background: rgba(233,69,96,0.2); color: #e94560; }
+.step.done { opacity: 0.8; cursor: pointer; }
+.step.done:hover { opacity: 1; background: rgba(124,214,124,0.15); color: #7cd67c; }
+.step-num {
+  width: 28px; height: 28px; border-radius: 50%; display: flex;
+  align-items: center; justify-content: center; font-size: 13px;
+  border: 2px solid currentColor; flex-shrink: 0;
+}
+.step.active .step-num { background: #e94560; color: #fff; border-color: #e94560; }
+.step.done .step-num { background: #7cd67c; color: #fff; border-color: #7cd67c; }
+.step-arrow { margin: 0 8px; color: #4a6a8a; font-size: 18px; opacity: 0.5; }
+
+/* ═══════════════ 阶段容器 ═══════════════ */
+.stage { display: none; max-width: 780px; margin: 0 auto; padding: 24px 20px 60px; }
+.stage.active { display: block; }
+
+/* ═══════════════ Stage 1: 上传 + 参数 ═══════════════ */
+.upload-zone {
+  border: 2px dashed #4a6a8a; border-radius: 16px; padding: 48px 24px;
+  text-align: center; transition: all 0.3s; cursor: pointer;
+  background: #16213e; margin-bottom: 20px;
+}
+.upload-zone:hover, .upload-zone.drag-over { border-color: #e94560; background: rgba(233,69,96,0.08); }
+.upload-zone .icon { font-size: 48px; margin-bottom: 12px; }
+.upload-zone .text { font-size: 16px; color: #8899aa; }
+.upload-zone .file-name { font-size: 14px; color: #7cd67c; margin-top: 8px; font-weight: 600; }
+
+.params-toggle {
+  display: flex; align-items: center; gap: 8px; color: #8899aa;
+  font-size: 14px; margin-bottom: 12px; cursor: pointer; user-select: none;
+}
+.params-toggle:hover { color: #e0e0e0; }
+.params-panel { display: none; background: #16213e; border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+.params-panel.open { display: block; }
+
+.param-group { margin-bottom: 16px; }
+.param-group-title { font-size: 13px; color: #e94560; font-weight: 700; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px; }
+.param-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.param-row label { font-size: 13px; color: #aabbcc; flex: 0 0 140px; }
+.param-row input[type=range] { flex: 1; margin: 0 12px; accent-color: #e94560; }
+.param-row .val { font-size: 13px; color: #f5a623; font-weight: 700; min-width: 36px; text-align: right; }
+.param-row input[type=text] { flex: 1; padding: 6px 10px; border-radius: 6px; border: 1px solid #4a6a8a; background: #1a1a2e; color: #e0e0e0; font-size: 13px; }
+.param-row input[type=text]:focus { border-color: #e94560; outline: none; }
+.param-row select { padding: 6px 10px; border-radius: 6px; border: 1px solid #4a6a8a; background: #1a1a2e; color: #e0e0e0; font-size: 13px; }
+
+.btn-primary {
+  width: 100%; padding: 14px; font-size: 17px; background: #e94560; color: #fff;
+  border-radius: 12px; font-weight: 700; letter-spacing: 1px;
+}
+.btn-primary:hover { background: #d63850; }
+.btn-primary:disabled { background: #4a6a8a; cursor: not-allowed; }
+
+/* ═══════════════ SSE 日志 ═══════════════ */
+.log-console {
+  background: #0d1117; border-radius: 12px; padding: 16px; margin-top: 16px;
+  font-family: "Cascadia Code", "Fira Code", "Consolas", monospace;
+  font-size: 13px; line-height: 1.6; color: #7cd67c; max-height: 360px;
+  overflow-y: auto; white-space: pre-wrap; word-break: break-all;
+}
+.log-line { animation: fadeIn 0.15s ease; }
+.log-line.error { color: #e94560; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+
+.extract-stats { text-align: center; padding: 24px; }
+.extract-stats .big { font-size: 36px; font-weight: 800; color: #7cd67c; }
+.extract-stats .sub { font-size: 14px; color: #8899aa; margin-top: 4px; }
+
+/* ═══════════════ Stage 2: 筛选 ═══════════════ */
+.filter-progress-wrap { background: #0f3460; border-radius: 8px; height: 6px; margin-bottom: 8px; overflow: hidden; }
+.filter-progress-bar { height: 100%; background: linear-gradient(90deg, #e94560, #f5a623); transition: width 0.2s; border-radius: 8px; }
+.filter-stats { font-size: 13px; color: #8899aa; text-align: center; margin-bottom: 20px; }
+
+.word-card {
+  background: #16213e; border-radius: 16px; padding: 40px 24px;
+  text-align: center; margin-bottom: 20px; min-height: 200px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+}
+.word-main { font-size: 48px; font-weight: 800; margin-bottom: 12px; word-break: break-all; }
+.word-main.cn { color: #f5a623; }
+.word-main.latin { color: #6cc4e0; }
+.word-main.mixed { color: #c084fc; }
+.word-meta { font-size: 13px; color: #8899aa; margin-bottom: 6px; }
+.word-reason { font-size: 13px; color: #7cd67c; }
+.word-tags { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-top: 8px; }
+.word-tag {
+  font-size: 11px; padding: 2px 8px; border-radius: 10px;
+  background: rgba(245,166,35,0.15); color: #f5a623;
+}
+
+.filter-actions { display: flex; gap: 12px; justify-content: center; margin-bottom: 12px; flex-wrap: wrap; }
+.btn-accept { background: #7cd67c; color: #1a1a2e; }
+.btn-reject { background: #e94560; color: #fff; }
+.btn-skip { background: #4a6a8a; color: #fff; }
+.btn-accept:hover { background: #6bc06b; }
+.btn-reject:hover { background: #d63850; }
+.btn-skip:hover { background: #5a7a9a; }
+
+.filter-hints { text-align: center; font-size: 12px; color: #5a7a9a; margin-bottom: 16px; }
+.filter-hints kbd {
+  display: inline-block; padding: 2px 7px; border-radius: 4px;
+  background: #0f3460; border: 1px solid #4a6a8a; font-family: inherit; font-size: 11px;
+}
+.filter-undo-row { text-align: center; }
+.btn-undo { background: transparent; color: #8899aa; font-size: 13px; padding: 6px 14px; }
+.btn-undo:disabled { opacity: 0.3; cursor: not-allowed; }
+
+.btn-finish { background: #f5a623; color: #1a1a2e; font-weight: 700; }
+.btn-finish:hover { background: #e09610; }
+
+/* ═══════════════ Stage 3: 词环 ═══════════════ */
+#stage3 { max-width: 100%; padding: 0; }
+.ring-container {
+  position: relative; width: 100%; height: 85vh; overflow: hidden;
+  background: #0a0a1a; cursor: grab; user-select: none;
+}
+.ring-container.dragging { cursor: grabbing; }
+.ring-band { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+.word-chip {
+  position: absolute; white-space: nowrap; font-weight: 700;
+  transition: color 0.3s; padding: 4px 8px; border-radius: 6px;
+  display: flex; align-items: center;
+}
+.word-chip:hover { filter: brightness(1.2); }
+
+.ring-toolbar {
+  position: absolute; top: 16px; right: 16px; z-index: 10;
+  display: flex; gap: 8px;
+}
+.ring-toolbar button {
+  padding: 8px 14px; font-size: 13px; border-radius: 20px;
+  background: rgba(22,33,62,0.9); color: #e0e0e0;
+  backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,0.1);
+}
+.ring-toolbar button:hover { background: rgba(233,69,96,0.3); }
+
+/* ═══════════════ 模态框 ═══════════════ */
+.modal-overlay {
+  display: none; position: fixed; inset: 0; z-index: 1000;
+  background: rgba(0,0,0,0.7); justify-content: center; align-items: center;
+}
+.modal-overlay.active { display: flex; }
+.modal-box {
+  background: #16213e; border-radius: 16px; padding: 32px;
+  max-width: 520px; width: 90%; max-height: 80vh; overflow-y: auto;
+}
+.modal-box h3 { font-size: 20px; margin-bottom: 16px; color: #f5a623; }
+.modal-box textarea {
+  width: 100%; padding: 12px; border-radius: 10px; background: #1a1a2e;
+  border: 1px solid #4a6a8a; color: #e0e0e0; font-size: 14px;
+  resize: vertical; min-height: 100px; font-family: inherit;
+}
+.modal-box textarea:focus { border-color: #e94560; outline: none; }
+.modal-box .hint { font-size: 12px; color: #8899aa; margin: 8px 0 16px; }
+.modal-actions { display: flex; gap: 12px; justify-content: flex-end; }
+.modal-actions .btn-cancel { background: #4a6a8a; color: #fff; }
+.modal-actions .btn-confirm { background: #7cd67c; color: #1a1a2e; }
+
+/* ═══════════════ 设置面板 ═══════════════ */
+.settings-modal { display: none; }
+.settings-modal.active { display: flex; }
+.settings-group { margin-bottom: 20px; }
+.settings-group label { display: block; font-size: 13px; color: #8899aa; margin-bottom: 6px; }
+.settings-group input[type=range] { width: 100%; accent-color: #e94560; }
+.settings-group .range-val { text-align: right; font-size: 13px; color: #f5a623; }
+.color-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+.color-swatch {
+  width: 32px; height: 32px; border-radius: 8px; cursor: pointer;
+  border: 3px solid transparent; transition: all 0.15s;
+}
+.color-swatch:hover { transform: scale(1.15); }
+.color-swatch.selected { border-color: #fff; box-shadow: 0 0 0 2px #e94560; }
+
+/* ═══════════════ Toast ═══════════════ */
+.toast {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  background: #16213e; color: #e0e0e0; padding: 12px 24px; border-radius: 24px;
+  font-size: 14px; z-index: 2000; opacity: 0; transition: opacity 0.3s;
+  pointer-events: none; border: 1px solid rgba(255,255,255,0.1);
+}
+.toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════ 步骤指示器 ═══════════════ -->
+<div class="step-indicator">
+  <div class="step active" id="step1" onclick="goToStage(1)">
+    <span class="step-num">1</span> 提取候选词
+  </div>
+  <span class="step-arrow">→</span>
+  <div class="step" id="step2" onclick="goToStage(2)">
+    <span class="step-num">2</span> 人工筛选
+  </div>
+  <span class="step-arrow">→</span>
+  <div class="step" id="step3" onclick="goToStage(3)">
+    <span class="step-num">3</span> 生成词环
+  </div>
+</div>
+
+<!-- ═══════════════ Stage 1: 提取候选词 ═══════════════ -->
+<div class="stage active" id="stage1">
+  <div class="upload-zone" id="uploadZone">
+    <div class="icon">📄</div>
+    <div class="text">拖拽聊天记录 .md 文件到这里<br>或点击选择文件</div>
+    <div class="file-name" id="uploadFileName" style="display:none"></div>
+    <input type="file" id="fileInput" accept=".md,.txt" style="display:none" onchange="handleFileSelect(event)">
+  </div>
+
+  <div class="params-toggle" onclick="toggleParams()">
+    <span id="paramsArrow">▶</span> 提取参数设置 <span style="font-size:12px;color:#5a7a9a">（点击展开，使用默认值即可）</span>
+  </div>
+
+  <div class="params-panel" id="paramsPanel">
+    <div class="param-group">
+      <div class="param-group-title">📐 基本设置</div>
+      <div class="param-row">
+        <label>候选词上限</label>
+        <input type="range" min="500" max="3000" value="1500" step="100" id="pMaxCand" oninput="updateVal('vMaxCand',this.value)">
+        <span class="val" id="vMaxCand">1500</span>
+      </div>
+      <div class="param-row">
+        <label>N-gram 最短</label>
+        <input type="range" min="1" max="4" value="2" step="1" id="pNgramMin" oninput="updateVal('vNgramMin',this.value)">
+        <span class="val" id="vNgramMin">2</span>
+      </div>
+      <div class="param-row">
+        <label>N-gram 最长</label>
+        <input type="range" min="3" max="8" value="5" step="1" id="pNgramMax" oninput="updateVal('vNgramMax',this.value)">
+        <span class="val" id="vNgramMax">5</span>
+      </div>
+    </div>
+
+    <div class="param-group">
+      <div class="param-group-title">🎯 PMI / 熵阈值</div>
+      <div class="param-row">
+        <label>PMI 最低阈值</label>
+        <input type="range" min="0.5" max="5.0" value="3.0" step="0.1" id="pPmiMin" oninput="updateVal('vPmiMin',this.value)">
+        <span class="val" id="vPmiMin">3.0</span>
+      </div>
+      <div class="param-row">
+        <label>邻接熵最低阈值</label>
+        <input type="range" min="0.3" max="3.0" value="1.0" step="0.1" id="pEntMin" oninput="updateVal('vEntMin',this.value)">
+        <span class="val" id="vEntMin">1.0</span>
+      </div>
+    </div>
+
+    <div class="param-group">
+      <div class="param-group-title">⚖️ 评分权重</div>
+      <div class="param-row">
+        <label>Jieba 降权系数</label>
+        <input type="range" min="0.2" max="1.0" value="0.6" step="0.05" id="pJiebaMul" oninput="updateVal('vJiebaMul',this.value)">
+        <span class="val" id="vJiebaMul">0.6</span>
+      </div>
+      <div class="param-row">
+        <label>非词典词加分</label>
+        <input type="range" min="0" max="30" value="15" step="1" id="pDictBonus" oninput="updateVal('vDictBonus',this.value)">
+        <span class="val" id="vDictBonus">15</span>
+      </div>
+    </div>
+
+    <div class="param-group">
+      <div class="param-group-title">🔤 拉丁词 / 高级</div>
+      <div class="param-row">
+        <label>拉丁词配额</label>
+        <input type="range" min="0" max="100" value="50" step="5" id="pLatinQ" oninput="updateVal('vLatinQ',this.value)">
+        <span class="val" id="vLatinQ">50</span>
+      </div>
+      <div class="param-row">
+        <label>发送者过滤</label>
+        <input type="text" id="pSender" placeholder="wxid_xxx（留空 = 全部）">
+      </div>
+      <div class="param-row">
+        <label>谐音梗检测</label>
+        <select id="pPinyin"><option value="1">启用</option><option value="0">禁用</option></select>
+      </div>
+    </div>
+  </div>
+
+  <button class="btn-primary" id="btnExtract" disabled onclick="startExtract()">选择文件后开始提取</button>
+
+  <div class="log-console" id="logConsole" style="display:none"></div>
+  <div class="extract-stats" id="extractStats" style="display:none"></div>
+</div>
+
+<!-- ═══════════════ Stage 2: 人工筛选 ═══════════════ -->
+<div class="stage" id="stage2">
+  <div class="filter-progress-wrap"><div class="filter-progress-bar" id="filterProgressBar" style="width:0%"></div></div>
+  <div class="filter-stats" id="filterStats">准备中...</div>
+
+  <div class="word-card" id="wordCard">
+    <div class="word-main" id="wordMain"></div>
+    <div class="word-meta" id="wordMeta"></div>
+    <div class="word-tags" id="wordTags"></div>
+    <div class="word-reason" id="wordReason"></div>
+  </div>
+
+  <div class="filter-actions">
+    <button class="btn-reject" onclick="reject()" id="btnReject">❌ 拒绝 (R)</button>
+    <button class="btn-skip" onclick="skip()" id="btnSkip">⏭ 跳过 (S)</button>
+    <button class="btn-accept" onclick="accept()" id="btnAccept">✅ 保留 (A)</button>
+  </div>
+
+  <div class="filter-hints">
+    <kbd>A</kbd> 保留 &nbsp; <kbd>R</kbd> 拒绝 &nbsp; <kbd>S</kbd> 跳过 &nbsp; <kbd>Ctrl+Z</kbd> 撤销
+  </div>
+  <div class="filter-undo-row">
+    <button class="btn-undo" id="btnUndo" disabled onclick="undo()">↩ 撤销 (Ctrl+Z)</button>
+  </div>
+  <div style="text-align:center;margin-top:16px;">
+    <button class="btn-finish" onclick="finishFilter()">完成筛选 → 构建词环</button>
+  </div>
+</div>
+
+<!-- ═══════════════ Stage 3: 词环可视化 ═══════════════ -->
+<div class="stage" id="stage3">
+  <div class="ring-container" id="ringContainer">
+    <div class="ring-band" id="ringBand"></div>
+    <div class="ring-toolbar">
+      <button onclick="openRingSettings()">⚙️ 设置</button>
+      <button onclick="downloadRingJSON()">💾 下载 JSON</button>
+      <button onclick="downloadStandaloneHTML()">📄 演示 HTML</button>
+      <button onclick="goToStage(2)">← 返回修改</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ 自定义词语弹窗 ═══════════════ -->
+<div class="modal-overlay" id="customModal">
+  <div class="modal-box">
+    <h3>✏️ 添加自定义词语</h3>
+    <p style="font-size:14px;color:#aabbcc;margin-bottom:12px;">输入你想补充的词语，用逗号、空格或换行分隔。<br>权重将设为保留词的平均值。</p>
+    <textarea id="customInput" placeholder="例如: 摸鱼, 摆烂, 内卷"></textarea>
+    <p class="hint">💡 已保留 <b id="customKeepCount">0</b> 个词。在这里手动补充候选词中遗漏的词语。</p>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="skipCustom()">跳过</button>
+      <button class="btn-confirm" onclick="addCustom()">添加并继续</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ 设置弹窗 ═══════════════ -->
+<div class="modal-overlay settings-modal" id="ringSettingsModal">
+  <div class="modal-box">
+    <h3>⚙️ 词环设置</h3>
+    <div class="settings-group">
+      <label>行数: <b id="rsRowsVal">8</b></label>
+      <input type="range" min="3" max="16" value="8" id="rsRows" oninput="document.getElementById('rsRowsVal').textContent=this.value">
+    </div>
+    <div class="settings-group">
+      <label>滚动速度: <b id="rsSpeedVal">中速</b></label>
+      <input type="range" min="1" max="5" value="3" id="rsSpeed" oninput="updateSpeedLabel(this.value)">
+    </div>
+    <div class="settings-group">
+      <label>颜色调色盘（多选）</label>
+      <div class="color-grid" id="colorGrid"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeRingSettings()">取消</button>
+      <button class="btn-confirm" onclick="applyRingSettings()">确认 ✓</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ Toast ═══════════════ -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════
+//  全局状态
+// ═══════════════════════════════════════════════════════
+const STATE = {
+  stage: 1,                // 当前阶段
+  // Stage 1
+  chatFile: null,
+  sessionId: null,
+  candidates: [],
+  // Stage 2
+  currentIndex: 0,
+  keepWords: [],           // [{word, count, pmi, ...}]
+  keepSet: new Set(),
+  removeSet: new Set(),
+  skipOrder: [],
+  skipSet: new Set(),
+  history: [],
+  reviewMode: false,
+  reviewIndex: 0,
+  customWords: [],
+  customWordsAdded: false,
+  // Stage 3
+  ringWords: [],
+  ringSettings: {
+    rows: 8, speed: 3, colors: null  // null = all
+  },
+  ringRAF: null,
+  ringCurrentX: 0,
+  ringBandWidth: 0,
+  ringAutoScroll: true,
+  ringAutoSpeed: 0.6,
+};
+
+const ALL_COLORS = [
+  '#e94560','#f5a623','#7cd67c','#6cc4e0','#a8b8e0',
+  '#ff6b9d','#c084fc','#fb923c','#38bdf8','#4ade80',
+  '#f472b6','#a78bfa','#fbbf24','#22d3ee','#34d399',
+  '#e879f9','#818cf8','#f59e0b','#67e8f9','#6ee7b7'
+];
+const SPEED_LABELS = ['', '最慢', '慢', '中速', '快', '最快'];
+const SPEED_MAP = [0, 0.15, 0.35, 0.6, 1.0, 1.8];
+
+// ═══════════════════════════════════════════════════════
+//  步骤导航
+// ═══════════════════════════════════════════════════════
+function goToStage(n) {
+  const current = STATE.stage;
+  // 只允许前进或回退到已完成步骤
+  if (n > current && n > maxReachedStage()) return;
+  if (n === 3 && STATE.ringWords.length === 0) return; // Stage 3 需要数据
+
+  STATE.stage = n;
+  document.querySelectorAll('.stage').forEach(s => s.classList.remove('active'));
+  document.getElementById('stage' + n).classList.add('active');
+  updateStepIndicator();
+
+  if (n === 3 && STATE.ringWords.length > 0) {
+    initRing();
+  }
+}
+
+function maxReachedStage() {
+  if (STATE.ringWords.length > 0) return 3;
+  if (STATE.keepWords.length > 0 || STATE.candidates.length > 0) return 2;
+  if (STATE.candidates.length > 0) return 2;
+  return 1;
+}
+
+function updateStepIndicator() {
+  const max = maxReachedStage();
+  for (let i = 1; i <= 3; i++) {
+    const el = document.getElementById('step' + i);
+    el.classList.remove('active', 'done');
+    if (i === STATE.stage) el.classList.add('active');
+    else if (i <= max) el.classList.add('done');
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+//  Stage 1: 上传 & 参数
+// ═══════════════════════════════════════════════════════
+const uploadZone = document.getElementById('uploadZone');
+const fileInput = document.getElementById('fileInput');
+const btnExtract = document.getElementById('btnExtract');
+
+uploadZone.addEventListener('click', () => fileInput.click());
+uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag-over'); });
+uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
+uploadZone.addEventListener('drop', e => {
+  e.preventDefault();
+  uploadZone.classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file) setChatFile(file);
+});
+fileInput.addEventListener('change', e => {
+  if (e.target.files[0]) setChatFile(e.target.files[0]);
+});
+
+function setChatFile(file) {
+  STATE.chatFile = file;
+  document.getElementById('uploadFileName').style.display = 'block';
+  document.getElementById('uploadFileName').textContent = '📎 ' + file.name;
+  btnExtract.disabled = false;
+  btnExtract.textContent = '⚡ 开始提取候选词';
+}
+
+function handleFileSelect(e) {
+  if (e.target.files[0]) setChatFile(e.target.files[0]);
+}
+
+function toggleParams() {
+  const panel = document.getElementById('paramsPanel');
+  const arrow = document.getElementById('paramsArrow');
+  panel.classList.toggle('open');
+  arrow.textContent = panel.classList.contains('open') ? '▼' : '▶';
+}
+
+function updateVal(elId, val) {
+  document.getElementById(elId).textContent = val;
+}
+
+function collectParams() {
+  return {
+    max_candidates: parseInt(document.getElementById('pMaxCand').value),
+    ngram_min: parseInt(document.getElementById('pNgramMin').value),
+    ngram_max: parseInt(document.getElementById('pNgramMax').value),
+    pmi_min: parseFloat(document.getElementById('pPmiMin').value),
+    entropy_min: parseFloat(document.getElementById('pEntMin').value),
+    jieba_multiplier: parseFloat(document.getElementById('pJiebaMul').value),
+    not_in_dict_bonus: parseInt(document.getElementById('pDictBonus').value),
+    latin_quota: parseInt(document.getElementById('pLatinQ').value),
+    no_pinyin: document.getElementById('pPinyin').value === '0',
+    sender: document.getElementById('pSender').value.trim() || null,
+  };
+}
+
+async function startExtract() {
+  if (!STATE.chatFile) return;
+
+  // UI 切换
+  document.getElementById('btnExtract').disabled = true;
+  document.getElementById('btnExtract').textContent = '⏳ 提取中...';
+  const logConsole = document.getElementById('logConsole');
+  logConsole.style.display = 'block';
+  logConsole.innerHTML = '';
+  document.getElementById('extractStats').style.display = 'none';
+
+  // 构建 FormData
+  const formData = new FormData();
+  formData.append('file', STATE.chatFile);
+  formData.append('params', JSON.stringify(collectParams()));
+
+  // SSE 连接
+  try {
+    const resp = await fetch('/api/extract', { method: 'POST', body: formData });
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop(); // 保留不完整的行
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const evt = JSON.parse(line.slice(6));
+            handleSSEEvent(evt, logConsole);
+          } catch (e) { /* skip parse errors */ }
+        }
+      }
+    }
+    // ── 兜底：SSE 流结束后如果还没拿到数据，再拉一次 ──
+    if (STATE.sessionId && STATE.candidates.length === 0) {
+      logConsoleLine('⏳ SSE 流结束，拉取候选数据...');
+      await fetchCandidates(STATE.sessionId);
+    }
+  } catch (err) {
+    logConsole.innerHTML += `<div class="log-line error">连接错误: ${err.message}</div>`;
+    document.getElementById('btnExtract').disabled = false;
+    document.getElementById('btnExtract').textContent = '🔄 重试';
+  }
+}
+
+function handleSSEEvent(evt, logConsole) {
+  if (evt.type === 'progress') {
+    const cls = evt.text.includes('错误') || evt.text.includes('Error') ? 'error' : '';
+    logConsole.innerHTML += `<div class="log-line ${cls}">${escapeHtml(evt.text)}</div>`;
+    logConsole.scrollTop = logConsole.scrollHeight;
+  } else if (evt.type === 'complete') {
+    STATE.sessionId = evt.session_id;
+    logConsole.innerHTML += `<div class="log-line">✅ 提取完成！共 ${evt.count} 个候选词</div>`;
+    // 获取候选词数据
+    fetchCandidates(evt.session_id);
+  } else if (evt.type === 'error') {
+    logConsole.innerHTML += `<div class="log-line error">❌ ${escapeHtml(evt.message)}</div>`;
+    document.getElementById('btnExtract').disabled = false;
+    document.getElementById('btnExtract').textContent = '🔄 重试';
+  }
+}
+
+async function fetchCandidates(sessionId, retryCount) {
+  retryCount = retryCount || 0;
+  const MAX_RETRIES = 3;
+  try {
+    const resp = await fetch(`/api/session/${sessionId}/candidates`);
+    const data = await resp.json();
+
+    if (data.candidates) {
+      // ── 成功：更新 UI ──
+      STATE.candidates = data.candidates;
+      document.getElementById('extractStats').style.display = 'block';
+      document.getElementById('extractStats').innerHTML = `
+        <div class="big">${data.count}</div>
+        <div class="sub">个候选词已提取</div>
+        <button class="btn-primary" style="margin-top:16px;" onclick="goToStage(2);initStage2();">
+          进入人工筛选 →
+        </button>
+      `;
+      document.getElementById('btnExtract').style.display = 'none';
+      updateStepIndicator();
+      // 自动跳转
+      setTimeout(() => { goToStage(2); initStage2(); }, 1500);
+      return;
+    }
+
+    if (data.error) {
+      // 202 = 提取仍在进行中 → 重试
+      if (resp.status === 202 && retryCount < MAX_RETRIES) {
+        const delay = 1000 * (retryCount + 1); // 1s, 2s, 3s
+        logConsoleLine(`⏳ 候选数据尚未就绪，${delay/1000}s 后重试... (${retryCount+1}/${MAX_RETRIES})`);
+        await new Promise(r => setTimeout(r, delay));
+        return fetchCandidates(sessionId, retryCount + 1);
+      }
+      // 其他错误或重试耗尽
+      showToast('获取候选词失败: ' + data.error);
+      document.getElementById('btnExtract').disabled = false;
+      document.getElementById('btnExtract').textContent = '🔄 重试';
+      return;
+    }
+
+    // 意外响应格式
+    showToast('获取候选词失败: 响应格式异常 (HTTP ' + resp.status + ')');
+    document.getElementById('btnExtract').disabled = false;
+    document.getElementById('btnExtract').textContent = '🔄 重试';
+
+  } catch (err) {
+    // 网络错误 → 重试
+    if (retryCount < MAX_RETRIES) {
+      const delay = 1000 * (retryCount + 1);
+      logConsoleLine(`⏳ 网络错误，${delay/1000}s 后重试... (${retryCount+1}/${MAX_RETRIES})`);
+      await new Promise(r => setTimeout(r, delay));
+      return fetchCandidates(sessionId, retryCount + 1);
+    }
+    showToast('获取候选词失败: ' + err.message);
+    document.getElementById('btnExtract').disabled = false;
+    document.getElementById('btnExtract').textContent = '🔄 重试';
+  }
+}
+
+function logConsoleLine(text) {
+  const lc = document.getElementById('logConsole');
+  if (lc) {
+    lc.innerHTML += `<div class="log-line">${escapeHtml(text)}</div>`;
+    lc.scrollTop = lc.scrollHeight;
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+//  Stage 2: 人工筛选
+// ═══════════════════════════════════════════════════════
+function initStage2() {
+  if (STATE.candidates.length === 0) return;
+
+  // 尝试从 localStorage 恢复
+  const saved = loadFilterProgress();
+  if (saved && saved.totalCandidates === STATE.candidates.length) {
+    STATE.currentIndex = saved.currentIndex || 0;
+    STATE.keepSet = new Set(saved.keepSet || []);
+    STATE.removeSet = new Set(saved.removeSet || []);
+    STATE.skipOrder = saved.skipOrder || [];
+    STATE.skipSet = new Set(STATE.skipOrder);
+    STATE.history = saved.history || [];
+    showToast(`已恢复进度: ${STATE.currentIndex}/${STATE.candidates.length}`);
+  } else {
+    STATE.currentIndex = 0;
+    STATE.keepSet = new Set();
+    STATE.removeSet = new Set();
+    STATE.skipOrder = [];
+    STATE.skipSet = new Set();
+    STATE.history = [];
+  }
+  STATE.reviewMode = false;
+  STATE.reviewIndex = 0;
+  STATE.customWords = [];
+  STATE.customWordsAdded = false;
+
+  updateStepIndicator();
+  showCurrentWord();
+}
+
+function showCurrentWord() {
+  if (STATE.currentIndex >= STATE.candidates.length) {
+    if (STATE.skipOrder.length > 0 && !STATE.reviewMode) {
+      showSkipPrompt();
+      return;
+    }
+    showCustomModal();
+    return;
+  }
+  renderWord(STATE.candidates[STATE.currentIndex]);
+  updateFilterUI();
+}
+
+function showSkipPrompt() {
+  document.getElementById('wordMain').textContent = '⏭';
+  document.getElementById('wordMain').className = 'word-main';
+  document.getElementById('wordMeta').textContent = `还有 ${STATE.skipOrder.length} 个跳过的词需要确认`;
+  document.getElementById('wordTags').innerHTML = '';
+  document.getElementById('wordReason').textContent = '';
+  document.getElementById('btnAccept').textContent = '📋 回顾跳过词';
+  document.getElementById('btnAccept').onclick = startSkipReview;
+  document.getElementById('btnReject').style.display = 'none';
+  document.getElementById('btnSkip').textContent = '✅ 完成筛选';
+  document.getElementById('btnSkip').onclick = showCustomModal;
+  updateFilterUI();
+}
+
+function startSkipReview() {
+  STATE.reviewMode = true;
+  STATE.reviewIndex = 0;
+  document.getElementById('btnAccept').textContent = '✅ 保留 (A)';
+  document.getElementById('btnAccept').onclick = accept;
+  document.getElementById('btnReject').style.display = '';
+  document.getElementById('btnSkip').textContent = '⏭ 跳过 (S)';
+  document.getElementById('btnSkip').onclick = skip;
+  showSkippedWord();
+}
+
+function showSkippedWord() {
+  if (STATE.reviewIndex >= STATE.skipOrder.length) {
+    STATE.reviewMode = false;
+    STATE.skipOrder = [];
+    STATE.skipSet = new Set();
+    showCustomModal();
+    return;
+  }
+  const word = STATE.skipOrder[STATE.reviewIndex];
+  const info = STATE.candidates.find(c => c.word === word);
+  if (info) {
+    renderWord(info);
+  } else {
+    document.getElementById('wordMain').textContent = word;
+    document.getElementById('wordMain').className = 'word-main cn';
+    document.getElementById('wordMeta').textContent = '';
+    document.getElementById('wordTags').innerHTML = '';
+    document.getElementById('wordReason').textContent = '（手动跳过的词）';
+  }
+  updateFilterUI();
+}
+
+function renderWord(info) {
+  const main = document.getElementById('wordMain');
+  main.textContent = info.word;
+  // 判断类型
+  const hasCJK = /[一-鿿]/.test(info.word);
+  const hasLatin = /[a-zA-Z]/.test(info.word);
+  if (hasCJK && hasLatin) main.className = 'word-main mixed';
+  else if (!hasCJK) main.className = 'word-main latin';
+  else main.className = 'word-main cn';
+
+  // 元数据
+  const parts = [];
+  if (info.count) parts.push(`频次: ${info.count}`);
+  if (info.pmi) parts.push(`PMI: ${info.pmi}`);
+  if (info.left_entropy) parts.push(`左熵: ${info.left_entropy}`);
+  if (info.right_entropy) parts.push(`右熵: ${info.right_entropy}`);
+  document.getElementById('wordMeta').textContent = parts.join('  |  ');
+
+  // 标签
+  const tags = [];
+  if (info.source) tags.push(info.source);
+  if (info.reason) tags.push(info.reason);
+  document.getElementById('wordTags').innerHTML = tags.map(t => `<span class="word-tag">${t}</span>`).join('');
+
+  // 谐音梗
+  let reasonText = '';
+  if (info.homophones && info.homophones.length > 0) {
+    reasonText = '🔊 谐音: ' + info.homophones.map(h => h.word || h).join(', ');
+  }
+  document.getElementById('wordReason').textContent = reasonText;
+}
+
+function updateFilterUI() {
+  const total = STATE.candidates.length;
+  const done = STATE.currentIndex;
+  const pct = total > 0 ? Math.round(done / total * 100) : 0;
+  document.getElementById('filterProgressBar').style.width = pct + '%';
+  document.getElementById('filterStats').innerHTML =
+    `${done}/${total} &nbsp;|&nbsp; ✅保留 ${STATE.keepSet.size} &nbsp;|&nbsp; ❌拒绝 ${STATE.removeSet.size} &nbsp;|&nbsp; ⏭跳过 ${STATE.skipOrder.length}`;
+  document.getElementById('btnUndo').disabled = STATE.history.length === 0;
+}
+
+function accept() {
+  if (STATE.reviewMode) { acceptSkipped(); return; }
+  const word = STATE.candidates[STATE.currentIndex].word;
+  STATE.keepSet.add(word);
+  STATE.removeSet.delete(word);
+  removeFromSkip(word);
+  STATE.history.push({ index: STATE.currentIndex, action: 'accept', word });
+  STATE.currentIndex++;
+  saveFilterProgress();
+  showCurrentWord();
+}
+
+function reject() {
+  if (STATE.reviewMode) { rejectSkipped(); return; }
+  const word = STATE.candidates[STATE.currentIndex].word;
+  STATE.removeSet.add(word);
+  STATE.keepSet.delete(word);
+  removeFromSkip(word);
+  STATE.history.push({ index: STATE.currentIndex, action: 'reject', word });
+  STATE.currentIndex++;
+  saveFilterProgress();
+  showCurrentWord();
+}
+
+function skip() {
+  if (STATE.reviewMode) { skipSkipped(); return; }
+  const word = STATE.candidates[STATE.currentIndex].word;
+  STATE.skipOrder.push(word);
+  STATE.skipSet.add(word);
+  STATE.history.push({ index: STATE.currentIndex, action: 'skip', word });
+  STATE.currentIndex++;
+  saveFilterProgress();
+  showCurrentWord();
+}
+
+function acceptSkipped() {
+  const word = STATE.skipOrder[STATE.reviewIndex];
+  STATE.keepSet.add(word);
+  STATE.skipOrder.splice(STATE.reviewIndex, 1);
+  STATE.skipSet.delete(word);
+  saveFilterProgress();
+  showSkippedWord();
+}
+
+function rejectSkipped() {
+  const word = STATE.skipOrder[STATE.reviewIndex];
+  STATE.removeSet.add(word);
+  STATE.skipOrder.splice(STATE.reviewIndex, 1);
+  STATE.skipSet.delete(word);
+  saveFilterProgress();
+  showSkippedWord();
+}
+
+function skipSkipped() {
+  STATE.reviewIndex++;
+  saveFilterProgress();
+  showSkippedWord();
+}
+
+function undo() {
+  if (STATE.history.length === 0) return;
+  const last = STATE.history.pop();
+  STATE.currentIndex = last.index;
+  if (last.action === 'accept') STATE.keepSet.delete(last.word);
+  else if (last.action === 'reject') STATE.removeSet.delete(last.word);
+  else if (last.action === 'skip') {
+    removeFromSkip(last.word);
+  }
+  STATE.reviewMode = false;
+  saveFilterProgress();
+  showCurrentWord();
+}
+
+function removeFromSkip(word) {
+  const idx = STATE.skipOrder.indexOf(word);
+  if (idx >= 0) STATE.skipOrder.splice(idx, 1);
+  STATE.skipSet.delete(word);
+}
+
+function finishFilter() {
+  if (STATE.currentIndex < STATE.candidates.length) {
+    if (!confirm(`还有 ${STATE.candidates.length - STATE.currentIndex} 个词未处理，确定完成筛选吗？`)) return;
+  }
+  if (STATE.skipOrder.length > 0 && !STATE.reviewMode) {
+    if (!confirm(`还有 ${STATE.skipOrder.length} 个跳过的词未回顾，确定跳过吗？`)) return;
+  }
+  showCustomModal();
+}
+
+function showCustomModal() {
+  document.getElementById('customKeepCount').textContent = STATE.keepSet.size;
+  document.getElementById('customInput').value = '';
+  document.getElementById('customModal').classList.add('active');
+}
+
+function addCustom() {
+  const raw = document.getElementById('customInput').value.trim();
+  if (raw) {
+    const words = raw.split(/[,\n\s]+/).filter(w => w.length > 0);
+    const allWords = new Set(STATE.candidates.map(c => c.word));
+    for (const w of words) {
+      if (!allWords.has(w) && !STATE.customWords.includes(w)) {
+        STATE.customWords.push(w);
+      }
+    }
+  }
+  STATE.customWordsAdded = true;
+  document.getElementById('customModal').classList.remove('active');
+  buildKeepWordsAndProceed();
+}
+
+function skipCustom() {
+  document.getElementById('customModal').classList.remove('active');
+  buildKeepWordsAndProceed();
+}
+
+function buildKeepWordsAndProceed() {
+  // 构建 keepWords 数组（含元数据）
+  const keepWordsData = [];
+  for (const c of STATE.candidates) {
+    if (STATE.keepSet.has(c.word)) {
+      keepWordsData.push(c);
+    }
+  }
+
+  // 计算平均权重（用于自定义词）
+  if (keepWordsData.length > 0) {
+    const avgCount = Math.round(keepWordsData.reduce((s, c) => s + (c.count || 1), 0) / keepWordsData.length);
+    const avgPmi = Math.round(keepWordsData.reduce((s, c) => s + (c.pmi || 0), 0) / keepWordsData.length * 10) / 10;
+    const avgLeft = Math.round(keepWordsData.reduce((s, c) => s + (c.left_entropy || 0), 0) / keepWordsData.length * 10) / 10;
+    const avgRight = Math.round(keepWordsData.reduce((s, c) => s + (c.right_entropy || 0), 0) / keepWordsData.length * 10) / 10;
+
+    for (const w of STATE.customWords) {
+      keepWordsData.push({
+        word: w, count: avgCount, source: 'manual', reason: '用户手动添加',
+        pmi: avgPmi, left_entropy: avgLeft, right_entropy: avgRight, homophones: null
+      });
+    }
+  }
+
+  STATE.keepWords = keepWordsData;
+  showToast(`保留 ${keepWordsData.length} 个词，正在构建词环...`);
+  buildRing();
+}
+
+async function buildRing() {
+  try {
+    const resp = await fetch('/api/build-ring', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ keep_words: STATE.keepWords })
+    });
+    const data = await resp.json();
+    if (data.ring_words) {
+      STATE.ringWords = data.ring_words;
+      showToast(`词环构建完成！${data.stats.total} 个词`);
+      goToStage(3);
+      initRing();
+    } else {
+      showToast('构建失败: ' + (data.error || '未知错误'));
+    }
+  } catch (err) {
+    showToast('构建失败: ' + err.message);
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+//  localStorage (Stage 2 进度)
+// ═══════════════════════════════════════════════════════
+function saveFilterProgress() {
+  const data = {
+    totalCandidates: STATE.candidates.length,
+    currentIndex: STATE.currentIndex,
+    keepSet: [...STATE.keepSet],
+    removeSet: [...STATE.removeSet],
+    skipOrder: STATE.skipOrder,
+    history: STATE.history,
+    timestamp: Date.now(),
+  };
+  try { localStorage.setItem('wr_pipeline_stage2', JSON.stringify(data)); } catch(e) {}
+}
+
+function loadFilterProgress() {
+  try {
+    const raw = localStorage.getItem('wr_pipeline_stage2');
+    return raw ? JSON.parse(raw) : null;
+  } catch(e) { return null; }
+}
+
+// ═══════════════════════════════════════════════════════
+//  Stage 3: 词环渲染
+// ═══════════════════════════════════════════════════════
+function initRing() {
+  if (STATE.ringWords.length === 0) return;
+  if (STATE.ringRAF) { cancelAnimationFrame(STATE.ringRAF); STATE.ringRAF = null; }
+
+  // 初始化设置
+  if (!STATE.ringSettings.colors) {
+    STATE.ringSettings.colors = [...ALL_COLORS];
+  }
+
+  computePlacements();
+  renderRing();
+  if (STATE.ringAutoScroll) autoLoop();
+}
+
+function getWordWidth(word, fontSize) {
+  let w = 0;
+  for (const ch of word) {
+    if (/^[一-鿿]$/.test(ch)) w += fontSize * 1.0;
+    else w += fontSize * 0.6;
+  }
+  return w + 16; // padding
+}
+
+function computePlacements() {
+  const container = document.getElementById('ringContainer');
+  const rows = STATE.ringSettings.rows;
+  const colors = STATE.ringSettings.colors;
+  const clientW = container.clientWidth;
+  const clientH = container.clientHeight;
+  const rowH = Math.max(32, Math.floor(clientH * 0.85 / rows));
+  const gap = 8;
+
+  // Shuffle
+  const shuffled = [...STATE.ringWords];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+
+  // 贪心最短行
+  const rowWidths = new Array(rows).fill(0);
+  const rowWords = Array.from({ length: rows }, () => []);
+
+  for (const word of shuffled) {
+    const fs = word.fontSize || 14;
+    const w = getWordWidth(word.word, fs);
+    // 找最短行
+    let minRow = 0;
+    for (let r = 1; r < rows; r++) {
+      if (rowWidths[r] < rowWidths[minRow]) minRow = r;
+    }
+    const color = colors[Math.floor(Math.random() * colors.length)];
+    rowWords[minRow].push({ ...word, _w: w, _fs: fs, _color: color });
+    rowWidths[minRow] += w + gap;
+  }
+
+  // 等宽调整
+  const bandW = Math.max(...rowWidths, clientW * 2);
+
+  STATE._placements = [];
+  STATE._rowWords = rowWords;
+
+  for (let r = 0; r < rows; r++) {
+    const words = rowWords[r];
+    if (words.length === 0) continue;
+    const deficit = bandW - rowWidths[r];
+    const extraPerGap = words.length > 1 ? Math.floor(deficit / (words.length - 1)) : 0;
+    let remainder = words.length > 1 ? deficit % (words.length - 1) : 0;
+
+    let x = 0;
+    for (let i = 0; i < words.length; i++) {
+      const w = words[i];
+      STATE._placements.push({
+        wordObj: w,
+        x: x,
+        y: r * rowH + Math.floor((rowH - w._fs) / 2),
+        row: r,
+        w: w._w,
+        fs: w._fs,
+        color: w._color,
+      });
+      x += w._w;
+      if (i < words.length - 1) {
+        x += gap + extraPerGap + (i < remainder ? 1 : 0);
+      }
+    }
+  }
+
+  STATE._ringBandW = bandW;
+  STATE._ringRowH = rowH;
+}
+
+function renderRing() {
+  const band = document.getElementById('ringBand');
+  band.innerHTML = '';
+
+  const copies = [-1, 0, 1, 2];
+  for (const p of STATE._placements) {
+    for (const copy of copies) {
+      const span = document.createElement('span');
+      span.className = 'word-chip';
+      span.textContent = p.wordObj.word;
+      span.style.cssText = `
+        position:absolute; left:${p.x + copy * STATE._ringBandW}px; top:${p.y}px;
+        font-size:${p.fs}px; color:${p.color}; white-space:nowrap;
+      `;
+      band.appendChild(span);
+    }
+  }
+
+  STATE.ringCurrentX = -STATE._ringBandW;
+  updateBandPosition();
+}
+
+function updateBandPosition() {
+  const band = document.getElementById('ringBand');
+  band.style.transform = `translateX(${STATE.ringCurrentX}px)`;
+
+  // 循环
+  const bw = STATE._ringBandW;
+  while (STATE.ringCurrentX <= -bw * 2) STATE.ringCurrentX += bw;
+  while (STATE.ringCurrentX >= 0) STATE.ringCurrentX -= bw;
+}
+
+function autoLoop() {
+  if (!STATE.ringAutoScroll) return;
+  STATE.ringCurrentX -= STATE.ringAutoSpeed;
+  updateBandPosition();
+  STATE.ringRAF = requestAnimationFrame(autoLoop);
+}
+
+// ═══════════════ 词环交互 ═══════════════
+(function() {
+  const container = document.getElementById('ringContainer');
+  let dragging = false, lastX = 0;
+
+  container.addEventListener('mousedown', e => {
+    dragging = true; lastX = e.clientX;
+    container.classList.add('dragging');
+    STATE.ringAutoScroll = false;
+  });
+  window.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const dx = e.clientX - lastX;
+    STATE.ringCurrentX += dx;
+    lastX = e.clientX;
+    updateBandPosition();
+  });
+  window.addEventListener('mouseup', () => {
+    if (dragging) {
+      dragging = false;
+      container.classList.remove('dragging');
+      STATE.ringAutoScroll = true;
+      if (!STATE.ringRAF) autoLoop();
+    }
+  });
+
+  container.addEventListener('wheel', e => {
+    e.preventDefault();
+    STATE.ringCurrentX += e.deltaY * 0.8 + e.deltaX;
+    updateBandPosition();
+  }, { passive: false });
+
+  container.addEventListener('touchstart', e => {
+    dragging = true; lastX = e.touches[0].clientX;
+    STATE.ringAutoScroll = false;
+  }, { passive: true });
+  container.addEventListener('touchmove', e => {
+    if (!dragging) return;
+    const dx = e.touches[0].clientX - lastX;
+    STATE.ringCurrentX += dx;
+    lastX = e.touches[0].clientX;
+    updateBandPosition();
+  }, { passive: true });
+  container.addEventListener('touchend', () => {
+    dragging = false;
+    STATE.ringAutoScroll = true;
+    if (!STATE.ringRAF) autoLoop();
+  });
+
+  document.addEventListener('keydown', e => {
+    if (STATE.stage !== 3) return;
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    if (e.code === 'Space') { e.preventDefault(); toggleAutoScroll(); }
+    else if (e.code === 'ArrowLeft') { STATE.ringCurrentX += 100; updateBandPosition(); }
+    else if (e.code === 'ArrowRight') { STATE.ringCurrentX -= 100; updateBandPosition(); }
+  });
+})();
+
+function toggleAutoScroll() {
+  STATE.ringAutoScroll = !STATE.ringAutoScroll;
+  if (STATE.ringAutoScroll) {
+    if (!STATE.ringRAF) autoLoop();
+    showToast('自动滚动: 开启');
+  } else {
+    showToast('自动滚动: 暂停');
+  }
+}
+
+// ═══════════════ 词环设置 ═══════════════
+function openRingSettings() {
+  const s = STATE.ringSettings;
+  document.getElementById('rsRows').value = s.rows;
+  document.getElementById('rsRowsVal').textContent = s.rows;
+  document.getElementById('rsSpeed').value = s.speed;
+  updateSpeedLabel(s.speed);
+  renderColorGrid();
+  document.getElementById('ringSettingsModal').classList.add('active');
+}
+
+function closeRingSettings() {
+  document.getElementById('ringSettingsModal').classList.remove('active');
+}
+
+function updateSpeedLabel(val) {
+  document.getElementById('rsSpeedVal').textContent = SPEED_LABELS[parseInt(val)] || '中速';
+}
+
+function renderColorGrid() {
+  const grid = document.getElementById('colorGrid');
+  const selected = STATE.ringSettings.colors || ALL_COLORS;
+  grid.innerHTML = ALL_COLORS.map(c => {
+    const sel = selected.includes(c) ? ' selected' : '';
+    return `<div class="color-swatch${sel}" style="background:${c}" onclick="toggleColor('${c}',this)"></div>`;
+  }).join('');
+}
+
+function toggleColor(color, el) {
+  const colors = STATE.ringSettings.colors;
+  const idx = colors.indexOf(color);
+  if (idx >= 0 && colors.length > 1) {
+    colors.splice(idx, 1);
+    el.classList.remove('selected');
+  } else if (idx < 0) {
+    colors.push(color);
+    el.classList.add('selected');
+  }
+}
+
+function applyRingSettings() {
+  STATE.ringSettings.rows = parseInt(document.getElementById('rsRows').value);
+  STATE.ringSettings.speed = parseInt(document.getElementById('rsSpeed').value);
+  STATE.ringAutoSpeed = SPEED_MAP[STATE.ringSettings.speed];
+  STATE.ringSettings.colors = [...STATE.ringSettings.colors];
+
+  closeRingSettings();
+  if (STATE.ringRAF) { cancelAnimationFrame(STATE.ringRAF); STATE.ringRAF = null; }
+  computePlacements();
+  renderRing();
+  STATE.ringAutoScroll = true;
+  autoLoop();
+  showToast('设置已应用 ✓');
+}
+
+// ═══════════════ 下载 ═══════════════
+function downloadRingJSON() {
+  const blob = new Blob([JSON.stringify(STATE.ringWords, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'ring_words.json';
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('ring_words.json 已下载');
+}
+
+function downloadStandaloneHTML() {
+  const wordsJSON = JSON.stringify(STATE.ringWords, null, 2);
+  const html = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>词云环 · 演示</title>
+<style>
+:root { --bg: #080812; --text: #c8c8e0; }
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Microsoft YaHei", sans-serif;
+  overflow: hidden; height: 100vh; user-select: none;
+}
+.toolbar {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+  display: flex; align-items: center; justify-content: flex-end; gap: 8px;
+  padding: 6px 14px;
+  background: rgba(8,8,18,0.94); backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.toolbar button {
+  padding: 6px 14px; border-radius: 5px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.05);
+  color: #aab; font-size: 12px; cursor: pointer;
+  transition: all 0.15s;
+}
+.toolbar button:hover { background: rgba(255,255,255,0.12); color: #fff; }
+.ring-stage {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  cursor: grab; overflow: hidden;
+}
+.ring-stage:active, .ring-stage.dragging { cursor: grabbing; }
+.ring-band {
+  position: absolute; top: 50%; left: 0; will-change: transform;
+}
+.word-chip {
+  position: absolute; font-weight: 600; white-space: nowrap; cursor: pointer;
+  border-radius: 6px; padding: 3px 10px; line-height: 1.3;
+  transition: background 0.12s, transform 0.12s;
+  transform: translateY(-50%);
+}
+.word-chip:hover {
+  background: rgba(255,255,255,0.10); z-index: 10 !important;
+  transform: translateY(-50%) scale(1.2);
+}
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 300;
+  background: rgba(0,0,0,0.55); backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0; pointer-events: none; transition: opacity 0.2s;
+}
+.modal-overlay.show { opacity: 1; pointer-events: auto; }
+.modal-box {
+  background: #14142e; border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 12px; padding: 24px 28px;
+  min-width: 380px; max-width: 440px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+}
+.modal-box h3 { font-size: 16px; margin-bottom: 18px; color: #ccd; }
+.modal-row { margin-bottom: 16px; }
+.modal-row label { display: block; font-size: 12px; color: #778; margin-bottom: 6px; }
+.modal-row input[type=range] {
+  -webkit-appearance: none; appearance: none;
+  width: 100%; height: 4px; border-radius: 2px;
+  background: rgba(255,255,255,0.10); outline: none; cursor: pointer;
+}
+.modal-row input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 16px; height: 16px;
+  border-radius: 50%; background: #e94560; cursor: pointer;
+}
+.modal-row .range-val { font-size: 12px; color: #99a; margin-left: 8px; }
+.color-grid { display: flex; flex-wrap: wrap; gap: 6px; }
+.color-swatch {
+  width: 36px; height: 36px; border-radius: 6px; cursor: pointer;
+  border: 3px solid transparent; transition: border-color 0.12s, transform 0.12s;
+  position: relative;
+}
+.color-swatch:hover { transform: scale(1.15); }
+.color-swatch.selected { border-color: #fff; box-shadow: 0 0 10px rgba(255,255,255,0.25); }
+.color-swatch .check {
+  position: absolute; top: 2px; right: 5px;
+  font-size: 14px; color: #fff; display: none;
+  text-shadow: 0 0 3px rgba(0,0,0,0.6);
+}
+.color-swatch.selected .check { display: block; }
+.modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+.modal-actions button {
+  padding: 8px 22px; border-radius: 6px; font-size: 13px; cursor: pointer;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(255,255,255,0.04); color: #99a;
+  transition: all 0.15s;
+}
+.modal-actions button:hover { background: rgba(255,255,255,0.10); color: #fff; }
+.modal-actions button.primary {
+  background: #e94560; border-color: #e94560; color: #fff; font-weight: 600;
+}
+.modal-actions button.primary:hover { background: #f5617a; }
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+  <button onclick="openSettings()">⚙️ 设置</button>
+</div>
+
+<div class="ring-stage" id="ringStage">
+  <div class="ring-band" id="ringBand"></div>
+</div>
+
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal-box">
+    <h3>⚙️ 设置</h3>
+    <div class="modal-row">
+      <label>行数 <span class="range-val" id="setRowLabel">8行</span></label>
+      <input type="range" id="setRows" min="3" max="16" value="8" oninput="previewRows(this.value)">
+    </div>
+    <div class="modal-row">
+      <label>滚动速度 <span class="range-val" id="setSpeedLabel">中速</span></label>
+      <input type="range" id="setSpeed" min="1" max="5" value="3" oninput="previewSpeed(this.value)">
+    </div>
+    <div class="modal-row">
+      <label>颜色调色盘（可多选，至少选 1 种）</label>
+      <div class="color-grid" id="colorGrid"></div>
+    </div>
+    <div class="modal-actions">
+      <button onclick="cancelSettings()">取消</button>
+      <button class="primary" onclick="applySettings()">确认 ✓</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const EMBEDDED_WORDS = ${wordsJSON};
+
+const ALL_COLORS = ['#e94560','#f5a623','#7cd67c','#6cc4e0','#a8b8e0','#ff6b9d','#c084fc','#fb923c','#38bdf8','#4ade80','#f472b6','#a78bfa','#fbbf24','#22d3ee','#34d399','#e879f9','#818cf8','#f59e0b','#67e8f9','#6ee7b7'];
+
+let words = [], numRows = 8, rowHeight = 48, bandTotalWidth = 0, currentX = 0;
+let isDragging = false, dragStartX = 0, dragStartScrollX = 0;
+let autoScroll = true, autoSpeed = 0.6, animId = null, placements = [];
+let activeColors = [...ALL_COLORS];
+let _previewRows = 8, _previewSpeed = 3, _previewColors = [...ALL_COLORS];
+
+const stage = document.getElementById('ringStage');
+const band = document.getElementById('ringBand');
+const modalOverlay = document.getElementById('modalOverlay');
+const colorGrid = document.getElementById('colorGrid');
+const SPEED_LABELS = ['', '最慢', '慢', '中速', '快', '最快'];
+
+function initRing(data) {
+  words = data;
+  randomize();
+  if (autoScroll && animId === null) autoLoop();
+}
+
+function randomize() { computePlacements(); renderRing(); }
+
+function getWordWidth(w) {
+  let width = 0;
+  for (const ch of w.word) {
+    if (/[一-鿿]/.test(ch)) width += w.fontSize * 1.0;
+    else width += w.fontSize * 0.6;
+  }
+  return width + 16;
+}
+
+function computePlacements() {
+  placements = [];
+  if (words.length === 0) return;
+  rowHeight = Math.max(32, Math.floor((stage.clientHeight * 0.85) / numRows));
+  const minGap = 8;
+  const wordData = words.map((w, i) => ({
+    ...w, _idx: i, _width: getWordWidth(w),
+    _color: activeColors[Math.floor(Math.random() * activeColors.length)]
+  }));
+  const shuffled = [...wordData];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  const rowWidths = new Array(numRows).fill(0);
+  const rowWords = new Array(numRows).fill(null).map(() => []);
+  for (const w of shuffled) {
+    let bestRow = 0;
+    for (let r = 1; r < numRows; r++) { if (rowWidths[r] < rowWidths[bestRow]) bestRow = r; }
+    const x = rowWidths[bestRow];
+    rowWidths[bestRow] += w._width + minGap;
+    rowWords[bestRow].push({ wordObj: w, x: x, w: w._width });
+  }
+  const maxRowWidth = Math.max(...rowWidths);
+  bandTotalWidth = Math.max(maxRowWidth, stage.clientWidth * 2);
+  for (let row = 0; row < numRows; row++) {
+    const items = rowWords[row];
+    if (items.length === 0) continue;
+    const deficit = bandTotalWidth - rowWidths[row];
+    if (deficit > 0) {
+      const nGaps = items.length;
+      const extraPerGap = Math.floor(deficit / nGaps);
+      let remainder = deficit % nGaps;
+      let cumX = 0;
+      for (let i = 0; i < items.length; i++) {
+        items[i].x = cumX;
+        const gap = minGap + extraPerGap + (remainder > 0 ? 1 : 0);
+        if (remainder > 0) remainder--;
+        cumX += items[i].w + gap;
+      }
+    }
+  }
+  for (let row = 0; row < numRows; row++) {
+    for (const item of rowWords[row]) {
+      placements.push({ wordObj: item.wordObj, x: item.x, y: row * rowHeight + rowHeight / 2, row: row, w: item.w });
+    }
+  }
+  band.style.height = (rowHeight * numRows) + 'px';
+  band.style.marginTop = (-rowHeight * numRows / 2) + 'px';
+}
+
+function renderRing() {
+  band.innerHTML = '';
+  for (let copy = -1; copy <= 2; copy++) {
+    const offsetX = copy * bandTotalWidth;
+    for (const p of placements) {
+      const w = p.wordObj;
+      const chip = document.createElement('span');
+      chip.className = 'word-chip';
+      chip.textContent = w.word;
+      chip.style.fontSize = w.fontSize + 'px';
+      chip.style.color = w._color;
+      chip.style.left = (offsetX + p.x) + 'px';
+      chip.style.top = p.y + 'px';
+      chip.style.zIndex = Math.floor(p.y);
+      band.appendChild(chip);
+    }
+  }
+  currentX = -bandTotalWidth;
+  updateBandPosition();
+}
+
+function updateBandPosition() {
+  if (bandTotalWidth <= 0) return;
+  while (currentX > 0) currentX -= bandTotalWidth;
+  while (currentX < -bandTotalWidth * 2) currentX += bandTotalWidth;
+  band.style.transform = 'translateX(' + currentX + 'px)';
+}
+
+// 拖拽 / 滚轮 / 键盘
+stage.addEventListener('mousedown', function(e) {
+  isDragging = true; stage.classList.add('dragging');
+  dragStartX = e.clientX; dragStartScrollX = currentX;
+});
+window.addEventListener('mousemove', function(e) {
+  if (!isDragging) return;
+  currentX = dragStartScrollX + (e.clientX - dragStartX);
+  updateBandPosition();
+});
+window.addEventListener('mouseup', function() {
+  isDragging = false; stage.classList.remove('dragging');
+});
+stage.addEventListener('touchstart', function(e) {
+  isDragging = true;
+  dragStartX = e.touches[0].clientX; dragStartScrollX = currentX;
+}, {passive: true});
+stage.addEventListener('touchmove', function(e) {
+  if (!isDragging) return;
+  currentX = dragStartScrollX + (e.touches[0].clientX - dragStartX);
+  updateBandPosition();
+}, {passive: true});
+stage.addEventListener('touchend', function() { isDragging = false; });
+stage.addEventListener('wheel', function(e) {
+  e.preventDefault();
+  currentX -= e.deltaY * 0.8 + e.deltaX;
+  updateBandPosition();
+}, {passive: false});
+document.addEventListener('keydown', function(e) {
+  if (e.target.tagName === 'INPUT') return;
+  if (e.key === 'ArrowLeft') { currentX += 100; updateBandPosition(); }
+  else if (e.key === 'ArrowRight') { currentX -= 100; updateBandPosition(); }
+  else if (e.key === ' ') { e.preventDefault(); toggleAutoScroll(); }
+});
+
+// 自动滚动
+function toggleAutoScroll() {
+  autoScroll = !autoScroll;
+  if (autoScroll) { autoLoop(); }
+  else { if (animId) cancelAnimationFrame(animId); }
+}
+function autoLoop() {
+  if (!autoScroll) return;
+  currentX -= autoSpeed;
+  updateBandPosition();
+  animId = requestAnimationFrame(autoLoop);
+}
+
+// 设置弹窗
+function buildColorGrid() {
+  colorGrid.innerHTML = '';
+  ALL_COLORS.forEach(function(c) {
+    var swatch = document.createElement('div');
+    swatch.className = 'color-swatch' + (_previewColors.includes(c) ? ' selected' : '');
+    swatch.style.background = c;
+    swatch.innerHTML = '<span class="check">✓</span>';
+    swatch.onclick = function() { toggleColor(c, swatch); };
+    colorGrid.appendChild(swatch);
+  });
+}
+function toggleColor(c, swatch) {
+  if (_previewColors.includes(c)) {
+    if (_previewColors.length <= 1) return;
+    _previewColors = _previewColors.filter(function(x) { return x !== c; });
+    swatch.classList.remove('selected');
+  } else {
+    _previewColors.push(c);
+    swatch.classList.add('selected');
+  }
+}
+function openSettings() {
+  _previewRows = numRows;
+  _previewSpeed = speedToIndex(autoSpeed);
+  _previewColors = activeColors.slice();
+  document.getElementById('setRows').value = _previewRows;
+  document.getElementById('setRowLabel').textContent = _previewRows + '行';
+  document.getElementById('setSpeed').value = _previewSpeed;
+  updateSpeedLabel(_previewSpeed);
+  buildColorGrid();
+  modalOverlay.classList.add('show');
+}
+function closeSettings() { modalOverlay.classList.remove('show'); }
+function previewRows(v) { _previewRows = parseInt(v); document.getElementById('setRowLabel').textContent = _previewRows + '行'; }
+function previewSpeed(v) { _previewSpeed = parseInt(v); updateSpeedLabel(_previewSpeed); }
+function updateSpeedLabel(idx) { document.getElementById('setSpeedLabel').textContent = SPEED_LABELS[idx] || '中速'; }
+function speedToIndex(s) {
+  if (s <= 0.2) return 1; if (s <= 0.4) return 2; if (s <= 0.7) return 3; if (s <= 1.2) return 4; return 5;
+}
+function indexToSpeed(i) { return [0, 0.15, 0.35, 0.6, 1.0, 1.8][i] || 0.6; }
+function cancelSettings() { closeSettings(); }
+function applySettings() {
+  numRows = _previewRows;
+  autoSpeed = indexToSpeed(_previewSpeed);
+  activeColors = _previewColors.slice();
+  closeSettings();
+  if (words.length > 0) randomize();
+}
+modalOverlay.addEventListener('click', function(e) { if (e.target === modalOverlay) closeSettings(); });
+window.addEventListener('resize', function() { if (words.length > 0) { computePlacements(); renderRing(); } });
+
+// 启动
+initRing(EMBEDDED_WORDS);
+<\/script>
+</body>
+</html>`;
+
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'word_ring_demo.html';
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('word_ring_demo.html 已下载 — 双击打开即可演示');
+}
+
+// ═══════════════════════════════════════════════════════
+//  键盘快捷键 (Stage 2)
+// ═══════════════════════════════════════════════════════
+document.addEventListener('keydown', e => {
+  if (STATE.stage !== 2) return;
+  // Ctrl+Z
+  if ((e.ctrlKey || e.metaKey) && (e.code === 'KeyZ' || e.code === 'Keyz')) {
+    e.preventDefault(); undo(); return;
+  }
+  // 输入框不触发
+  if (!e.isComposing && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+
+  const code = e.code || '';
+  const key = (e.key || '').toUpperCase();
+
+  if (code === 'KeyA' || key === 'A') { e.preventDefault(); accept(); }
+  else if (code === 'KeyR' || key === 'R') { e.preventDefault(); reject(); }
+  else if (code === 'KeyS' || key === 'S') { e.preventDefault(); skip(); }
+});
+
+// ═══════════════════════════════════════════════════════
+//  工具函数
+// ═══════════════════════════════════════════════════════
+function escapeHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function showToast(msg) {
+  const toast = document.getElementById('toast');
+  toast.textContent = msg;
+  toast.classList.add('show');
+  clearTimeout(toast._timer);
+  toast._timer = setTimeout(() => toast.classList.remove('show'), 2200);
+}
+</script>
+</body>
+</html>

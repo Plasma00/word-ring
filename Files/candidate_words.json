@@ -1,0 +1,121 @@
+[
+  {
+    "word": "爬山",
+    "count": 5,
+    "frequency": 0.128205,
+    "source": "jieba",
+    "reason": "高频词"
+  },
+  {
+    "word": "哈哈哈",
+    "count": 3,
+    "frequency": 0.076923,
+    "source": "jieba",
+    "reason": "高频词"
+  },
+  {
+    "word": "安排",
+    "count": 3,
+    "frequency": 0.076923,
+    "source": "jieba",
+    "reason": "高频词"
+  },
+  {
+    "word": "心情",
+    "count": 2,
+    "frequency": 0.051282,
+    "source": "jieba",
+    "reason": "高频词"
+  },
+  {
+    "word": "一起",
+    "count": 2,
+    "frequency": 0.051282,
+    "source": "jieba",
+    "reason": "高频词"
+  },
+  {
+    "word": "蚌埠",
+    "count": 2,
+    "frequency": 0.051282,
+    "source": "jieba",
+    "reason": "高频词"
+  },
+  {
+    "word": "yyds",
+    "count": 2,
+    "frequency": 0.051282,
+    "source": "jieba",
+    "reason": "高频词"
+  },
+  {
+    "word": "看到",
+    "count": 2,
+    "frequency": 0.051282,
+    "source": "jieba",
+    "reason": "高频词"
+  },
+  {
+    "word": "社畜",
+    "count": 2,
+    "frequency": 0.051282,
+    "source": "jieba",
+    "reason": "高频词"
+  },
+  {
+    "word": "这边",
+    "count": 2,
+    "frequency": 0.051282,
+    "source": "jieba",
+    "reason": "高频词"
+  },
+  {
+    "word": "上班",
+    "count": 2,
+    "frequency": 0.051282,
+    "source": "jieba",
+    "reason": "高频词"
+  },
+  {
+    "word": "起来",
+    "count": 2,
+    "frequency": 0.051282,
+    "source": "jieba",
+    "reason": "高频词"
+  },
+  {
+    "word": "外卖",
+    "count": 2,
+    "frequency": 0.051282,
+    "source": "jieba",
+    "reason": "高频词"
+  },
+  {
+    "word": "食堂",
+    "count": 2,
+    "frequency": 0.051282,
+    "source": "jieba",
+    "reason": "高频词"
+  },
+  {
+    "word": "主意",
+    "count": 2,
+    "frequency": 0.051282,
+    "source": "jieba",
+    "reason": "高频词"
+  },
+  {
+    "word": "好多",
+    "count": 2,
+    "frequency": 0.051282,
+    "source": "jieba",
+    "reason": "高频词"
+  },
+  {
+    "word": "自驾",
+    "count": 2,
+    "frequency": 0.051282,
+    "source": "jieba",
+    "reason": "高频词"
+  }
+]

@@ -5,7 +5,7 @@
 通道A: jieba 标准分词 → 常规高频词 (降权)
 通道B: n-gram + PMI + 邻接熵 → 真·新词发现
 通道C: 拼音空间映射 → 谐音梗检测 (如 "蚌埠住了" → "绷不住了")
-通道D: 纯拉丁词 + PMI/熵 → 拼音首字母缩写检测 (如 "zxq", "yyds")
+通道D: 纯拉丁词 + PMI/熵 → 拼音首字母缩写检测 (如 "kfc", "yyds")
 
 v3 核心改进:
   1. 深度清洗: 去时间戳/ID/URL/纯数字/系统消息([图片][链接]撤回等)
@@ -14,7 +14,9 @@ v3 核心改进:
   4. 保留 PMI+熵+谐音梗全部 v2 能力
 
 用法:
-    python extract_words_v3.py <聊天文件.md> [--output-dir <输出目录>]
+    python extract_words.py <聊天文件.md> [--output-dir <输出目录>]
+
+  聊天文件格式要求: 见 Files/chat_history.md (示例文件)
 
 输出:
     candidate_words.json  - 候选词 JSON (含 pmi/entropy/pinyin/纯英文 元数据)
@@ -791,7 +793,7 @@ def extract_latin_candidates(cleaned_texts, char_counter, bigram_counter,
     因此 PMI 阈值更高 (LATIN_WORD_PMI_MIN=4.0)。
 
     检测目标:
-      - 人名缩写: zxq, yjy, lzx (拼音首字母)
+      - 人名缩写: xxx (拼音首字母)
       - 网络梗: yyds, nsdd, awsl, xswl
       - 品牌/专名: b站 (这个有中文), nba, kfc (纯英文)
 
@@ -925,7 +927,7 @@ def score_candidate(ngram, info):
     if not is_in_jieba_dict(ngram):
         score += NOT_IN_DICT_BONUS
 
-    # v3: 删除混合脚本 bonus (v2 中 19 个中英混用词 8 个是 "zxq说" 类人名碎片)
+    # v3: 删除混合脚本 bonus (v2 中 19 个中英混用词 8 个是 "xxx说" 类人名碎片)
 
     return score
 
@@ -937,7 +939,7 @@ def merge_and_rank_v3(jieba_counter, ngram_candidates, latin_candidates, stopwor
       - 30% ngram 纯中文新词 (按综合评分, 非词典词提权)
       - 15% ngram 谐音梗词
       - 5%  ngram 混合脚本 (降配, 无 bonus)
-      - 8%  纯拉丁词 (通道D, 如 zxq/yyds)
+      - 8%  纯拉丁词 (通道D, 如 kfc/yyds)
       - 2%  弹性补充
     """
     jieba_quota = int(max_candidates * 0.40)
@@ -1291,11 +1293,11 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 示例:
-  python extract_words_v3.py 聊天.md
-  python extract_words_v3.py 聊天.md --output-dir ./output_v3
-  python extract_words_v3.py 聊天.md --sender wxid_xxxxxxxxxxxxxx
-  python extract_words_v3.py 聊天.md --max-candidates 2000
-  python extract_words_v3.py 聊天.md --pmi-min 4.0 --entropy-min 1.2
+  python extract_words.py Files/chat_history.md
+  python extract_words.py Files/chat_history.md --output-dir ./Files
+  python extract_words.py Files/chat_history.md --sender wxid_xxxxxxxxxxxxxx
+  python extract_words.py Files/chat_history.md --max-candidates 2000
+  python extract_words.py Files/chat_history.md --pmi-min 4.0 --entropy-min 1.2
 
 v3 改进:
   - 深度清洗: 系统消息/撤回/纯图片链接丢弃
@@ -1305,8 +1307,8 @@ v3 改进:
         """
     )
     parser.add_argument('chat_file', help='聊天记录 Markdown 文件路径')
-    parser.add_argument('--output-dir', '-o', default='./output_v3',
-                        help='输出目录 (默认: ./output_v3)')
+    parser.add_argument('--output-dir', '-o', default='./Files',
+                        help='输出目录 (默认: ./Files)')
     parser.add_argument('--sender', '-s', default=None,
                         help='只提取指定发送者的消息')
     parser.add_argument('--max-candidates', '-n', type=int, default=MAX_CANDIDATES,
@@ -1319,12 +1321,28 @@ v3 改进:
                         help=f'最低邻接熵阈值 (默认: {ENTROPY_MIN})')
     parser.add_argument('--no-pinyin', action='store_true',
                         help='禁用拼音谐音梗检测')
+    parser.add_argument('--ngram-min', type=int, default=NGRAM_MIN,
+                        help=f'n-gram 最短长度 (默认: {NGRAM_MIN})')
+    parser.add_argument('--ngram-max', type=int, default=NGRAM_MAX,
+                        help=f'n-gram 最长长度 (默认: {NGRAM_MAX})')
+    parser.add_argument('--jieba-multiplier', type=float, default=JIEBA_SCORE_MULTIPLIER,
+                        help=f'jieba 评分降权系数 (默认: {JIEBA_SCORE_MULTIPLIER})')
+    parser.add_argument('--not-in-dict-bonus', type=int, default=NOT_IN_DICT_BONUS,
+                        help=f'非词典词加分 (默认: {NOT_IN_DICT_BONUS})')
+    parser.add_argument('--latin-quota', type=int, default=LATIN_WORD_QUOTA,
+                        help=f'拉丁词配额 (默认: {LATIN_WORD_QUOTA})')
     args = parser.parse_args()
 
-    # 命令行覆盖阈值
+    # 命令行覆盖阈值和参数
     cli_pmi_min = args.pmi_min
     cli_entropy_min = args.entropy_min
     local_max = args.max_candidates
+    ngram_min = args.ngram_min
+    ngram_max = args.ngram_max
+    # 用 global 覆盖模块级常量（供后续函数内部使用）
+    globals()['JIEBA_SCORE_MULTIPLIER'] = args.jieba_multiplier
+    globals()['NOT_IN_DICT_BONUS'] = args.not_in_dict_bonus
+    globals()['LATIN_WORD_QUOTA'] = args.latin_quota
 
     chat_file = args.chat_file
     if not os.path.exists(chat_file):
@@ -1373,7 +1391,7 @@ v3 改进:
 
     # ── 通道B: ngram 扫描 + PMI/熵过滤 ──────────────────
     print("🔍 通道B: n-gram 扫描 (含上下文)...")
-    raw_ngrams = scan_ngrams_with_context(cleaned_texts, NGRAM_MIN, NGRAM_MAX)
+    raw_ngrams = scan_ngrams_with_context(cleaned_texts, ngram_min, ngram_max)
     print(f"   原始 ngram: {len(raw_ngrams):,} 个")
 
     print(f"🔬 PMI+邻接熵过滤 (PMI>={cli_pmi_min}, 熵>={cli_entropy_min})...")

@@ -1,0 +1,46 @@
+# 候选词汇列表 (v3 增强版 · 四通道)
+# 共 17 个候选词
+# ngram 过滤前: 11 → 过滤后: 0 个
+#
+# 格式: 排名 | 词 | 频次 | 来源 | PMI | 左熵 | 右熵 | 说明
+# 标记说明:
+#   [jieba]   = 标准分词结果 (v3 降权)
+#   [ngram]   = PMI+熵过滤后的新词
+#   [latin]   = 纯拉丁词 (拼音首字母缩写/人名/梗)
+#   🎯 = 谐音梗（已匹配到原词）
+#   🔍 = 潜在新词（非谐音）
+#
+   1. 爬山　　　　　　      5  [jieba] PMI=    -  LE=   -  RE=   -
+     └─ 高频词
+   2. 哈哈哈　　　　　      3  [jieba] PMI=    -  LE=   -  RE=   -
+     └─ 高频词
+   3. 安排　　　　　　      3  [jieba] PMI=    -  LE=   -  RE=   -
+     └─ 高频词
+   4. 心情　　　　　　      2  [jieba] PMI=    -  LE=   -  RE=   -
+     └─ 高频词
+   5. 一起　　　　　　      2  [jieba] PMI=    -  LE=   -  RE=   -
+     └─ 高频词
+   6. 蚌埠　　　　　　      2  [jieba] PMI=    -  LE=   -  RE=   -
+     └─ 高频词
+   7. yyds　　　　      2  [jieba] PMI=    -  LE=   -  RE=   -
+     └─ 高频词
+   8. 看到　　　　　　      2  [jieba] PMI=    -  LE=   -  RE=   -
+     └─ 高频词
+   9. 社畜　　　　　　      2  [jieba] PMI=    -  LE=   -  RE=   -
+     └─ 高频词
+  10. 这边　　　　　　      2  [jieba] PMI=    -  LE=   -  RE=   -
+     └─ 高频词
+  11. 上班　　　　　　      2  [jieba] PMI=    -  LE=   -  RE=   -
+     └─ 高频词
+  12. 起来　　　　　　      2  [jieba] PMI=    -  LE=   -  RE=   -
+     └─ 高频词
+  13. 外卖　　　　　　      2  [jieba] PMI=    -  LE=   -  RE=   -
+     └─ 高频词
+  14. 食堂　　　　　　      2  [jieba] PMI=    -  LE=   -  RE=   -
+     └─ 高频词
+  15. 主意　　　　　　      2  [jieba] PMI=    -  LE=   -  RE=   -
+     └─ 高频词
+  16. 好多　　　　　　      2  [jieba] PMI=    -  LE=   -  RE=   -
+     └─ 高频词
+  17. 自驾　　　　　　      2  [jieba] PMI=    -  LE=   -  RE=   -
+     └─ 高频词

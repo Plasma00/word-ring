@@ -5,14 +5,14 @@
 可重复使用。当你修改 merged_keep.md 后，运行此脚本即可重新生成环数据。
 
 用法:
-    python scripts/build_ring.py
+    python scripts/build_ring.py [--from-keep-json]
 
-输入:
-    output_v3/merged_keep.md        ← 你编辑的词表（可手动增删词）
-    output_v3/candidate_words.json  ← v3 提取的权重源数据
+输入（二选一，自动检测）:
+    Files/keep_words.json       ← visual_filter.html 导出（优先）
+    Files/merged_keep.md        ← 你编辑的词表（备用）
 
 输出:
-    output_v3/ring_words.json       ← 网页环加载的数据
+    Files/ring_words.json       ← 网页环加载的数据
 
 权重规则:
     - 在 candidate_words.json 中找到的词 → 使用实际频次/PMI/熵计算权重
@@ -23,7 +23,7 @@
     - 极大值被压缩，避免少数高频词垄断视觉
 
 网页:
-    用浏览器打开 scripts/word_ring.html → 加载 output_v3/ring_words.json
+    用浏览器打开 scripts/word_ring.html → 加载 Files/ring_words.json
     或直接: python -m http.server 8000 → http://localhost:8000/scripts/word_ring.html
 """
 
@@ -41,9 +41,10 @@ if sys.platform == 'win32':
 # ── 配置 ──────────────────────────────────────────────
 SCRIPT_DIR = Path(__file__).parent
 PROJECT_DIR = SCRIPT_DIR.parent
-MERGED_MD = PROJECT_DIR / 'output_v3' / 'merged_keep.md'
-CANDIDATE_JSON = PROJECT_DIR / 'output_v3' / 'candidate_words.json'
-OUTPUT_JSON = PROJECT_DIR / 'output_v3' / 'ring_words.json'
+MERGED_MD = PROJECT_DIR / 'Files' / 'merged_keep.md'
+CANDIDATE_JSON = PROJECT_DIR / 'Files' / 'candidate_words.json'
+KEEP_WORDS_JSON = PROJECT_DIR / 'Files' / 'keep_words.json'
+OUTPUT_JSON = PROJECT_DIR / 'Files' / 'ring_words.json'
 
 FONT_MIN = 14
 FONT_MAX = 72
@@ -107,59 +108,90 @@ def font_size(weight, w_min, w_max):
 
 # ── 主流程 ────────────────────────────────────────────
 def main():
-    if not MERGED_MD.exists():
-        print(f"错误: 找不到 {MERGED_MD}")
-        print("  请先运行 extract_words_v3.py 获取候选词，然后编辑 merged_keep.md")
-        return
+    # ── 模式 1: keep_words.json (visual_filter.html 导出) ──
+    if KEEP_WORDS_JSON.exists():
+        print(f"📋 检测到 {KEEP_WORDS_JSON.name} → 直接构建")
+        with open(KEEP_WORDS_JSON, 'r', encoding='utf-8') as f:
+            keep_data = json.load(f)
 
-    if not CANDIDATE_JSON.exists():
-        print(f"错误: 找不到 {CANDIDATE_JSON}")
-        return
+        results = []
+        found_weights = []
 
-    # 1. 解析词表
-    word_list = parse_merged_md(MERGED_MD)
-    print(f"📋 解析 merged_keep.md → {len(word_list)} 个词")
-
-    # 2. 加载权重
-    meta = load_meta(CANDIDATE_JSON)
-    print(f"📊 加载权重数据 → {len(meta)} 条记录")
-
-    # 3. 匹配 & 计算
-    results = []
-    found_weights = []
-
-    for word, tag in word_list:
-        info = meta.get(word)
-        if info:
-            w = calc_weight(info)
+        for entry in keep_data:
+            w = calc_weight(entry)
             found_weights.append(w)
             results.append({
-                'word': word, 'tag': tag,
-                'count': info.get('count', 0),
+                'word': entry['word'],
+                'tag': 'keep',
+                'count': entry.get('count', 0),
                 'weight': w,
-                'pmi': info.get('pmi'),
-                'left_entropy': info.get('left_entropy'),
-                'right_entropy': info.get('right_entropy'),
-                'source': info.get('source', ''),
-                'reason': info.get('reason', ''),
-                'homophone': info['homophones'][0]['word'] if info.get('homophones') else None,
-            })
-        else:
-            results.append({
-                'word': word, 'tag': tag,
-                'count': 1,
-                'weight': None,  # 稍后填
-                'source': 'manual',
-                'reason': '手动新增',
+                'pmi': entry.get('pmi'),
+                'left_entropy': entry.get('left_entropy'),
+                'right_entropy': entry.get('right_entropy'),
+                'source': entry.get('source', ''),
+                'reason': entry.get('reason', ''),
+                'homophone': entry['homophones'][0]['word'] if entry.get('homophones') else None,
             })
 
-    # 4. 新增词用平均权重
-    avg_weight = sum(found_weights) / len(found_weights) if found_weights else 30.0
-    new_count = 0
-    for r in results:
-        if r['weight'] is None:
-            r['weight'] = round(avg_weight, 1)
-            new_count += 1
+        new_count = 0
+        print(f"📊 共 {len(results)} 个词 (全部来自 keep_words.json)")
+
+    # ── 模式 2: merged_keep.md + candidate_words.json ──
+    else:
+        if not MERGED_MD.exists():
+            print(f"错误: 找不到 {MERGED_MD} 或 {KEEP_WORDS_JSON}")
+            print("  请先运行 visual_filter.html 筛选词并导出 keep_words.json")
+            print("  或者编辑 merged_keep.md")
+            return
+
+        if not CANDIDATE_JSON.exists():
+            print(f"错误: 找不到 {CANDIDATE_JSON}")
+            return
+
+        # 1. 解析词表
+        word_list = parse_merged_md(MERGED_MD)
+        print(f"📋 解析 merged_keep.md → {len(word_list)} 个词")
+
+        # 2. 加载权重
+        meta = load_meta(CANDIDATE_JSON)
+        print(f"📊 加载权重数据 → {len(meta)} 条记录")
+
+        # 3. 匹配 & 计算
+        results = []
+        found_weights = []
+
+        for word, tag in word_list:
+            info = meta.get(word)
+            if info:
+                w = calc_weight(info)
+                found_weights.append(w)
+                results.append({
+                    'word': word, 'tag': tag,
+                    'count': info.get('count', 0),
+                    'weight': w,
+                    'pmi': info.get('pmi'),
+                    'left_entropy': info.get('left_entropy'),
+                    'right_entropy': info.get('right_entropy'),
+                    'source': info.get('source', ''),
+                    'reason': info.get('reason', ''),
+                    'homophone': info['homophones'][0]['word'] if info.get('homophones') else None,
+                })
+            else:
+                results.append({
+                    'word': word, 'tag': tag,
+                    'count': 1,
+                    'weight': None,  # 稍后填
+                    'source': 'manual',
+                    'reason': '手动新增',
+                })
+
+        # 4. 新增词用平均权重
+        avg_weight = sum(found_weights) / len(found_weights) if found_weights else 30.0
+        new_count = 0
+        for r in results:
+            if r['weight'] is None:
+                r['weight'] = round(avg_weight, 1)
+                new_count += 1
 
     # 5. 计算字号
     weights = [r['weight'] for r in results]
@@ -186,7 +218,8 @@ def main():
     print(f"   权重范围: {w_min:.1f} ~ {w_max:.1f} (均值 {sum(weights)/len(weights):.1f})")
     print(f"   字号范围: {min(fs_vals):.0f}px ~ {max(fs_vals):.0f}px")
     print(f"   来源分布: {src_dist}")
-    print(f"   手动新增: {new_count} 个 (使用平均权重 {avg_weight:.1f})")
+    if new_count > 0:
+        print(f"   手动新增: {new_count} 个")
     print()
     print("Top 10 (权重最高):")
     top10 = sorted(results, key=lambda x: x['weight'], reverse=True)[:10]
