@@ -5,7 +5,7 @@
 通道A: jieba 标准分词 → 常规高频词 (降权)
 通道B: n-gram + PMI + 邻接熵 → 真·新词发现
 通道C: 拼音空间映射 → 谐音梗检测 (如 "蚌埠住了" → "绷不住了")
-通道D: 纯拉丁词 + PMI/熵 → 拼音首字母缩写检测 (如 "zxq", "yyds")
+通道D: 纯拉丁词 + PMI/熵 → 拼音首字母缩写检测 (如 "kfc", "yyds")
 
 v3 核心改进:
   1. 深度清洗: 去时间戳/ID/URL/纯数字/系统消息([图片][链接]撤回等)
@@ -791,7 +791,7 @@ def extract_latin_candidates(cleaned_texts, char_counter, bigram_counter,
     因此 PMI 阈值更高 (LATIN_WORD_PMI_MIN=4.0)。
 
     检测目标:
-      - 人名缩写: zxq, yjy, lzx (拼音首字母)
+      - 人名缩写: cxk (拼音首字母)
       - 网络梗: yyds, nsdd, awsl, xswl
       - 品牌/专名: b站 (这个有中文), nba, kfc (纯英文)
 
@@ -925,7 +925,7 @@ def score_candidate(ngram, info):
     if not is_in_jieba_dict(ngram):
         score += NOT_IN_DICT_BONUS
 
-    # v3: 删除混合脚本 bonus (v2 中 19 个中英混用词 8 个是 "zxq说" 类人名碎片)
+    # v3: 删除混合脚本 bonus (v2 中 19 个中英混用词 8 个是 "xxx说" 类人名碎片)
 
     return score
 
@@ -937,7 +937,7 @@ def merge_and_rank_v3(jieba_counter, ngram_candidates, latin_candidates, stopwor
       - 30% ngram 纯中文新词 (按综合评分, 非词典词提权)
       - 15% ngram 谐音梗词
       - 5%  ngram 混合脚本 (降配, 无 bonus)
-      - 8%  纯拉丁词 (通道D, 如 zxq/yyds)
+      - 8%  纯拉丁词 (通道D, 如 kfc/yyds)
       - 2%  弹性补充
     """
     jieba_quota = int(max_candidates * 0.40)
